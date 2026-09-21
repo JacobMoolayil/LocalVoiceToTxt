@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Windows;
 using System.Windows.Forms;
 using System.Windows.Interop;
@@ -9,66 +10,129 @@ namespace LocalVoice.App
 {
     public partial class App : System.Windows.Application
     {
-        private EngineProcessService _engine;
-        private GlobalHotkeyService _hotkey;
-        private TextInjectionService _injector;
+        private EngineProcessService? _engine;
+        private GlobalHotkeyService? _hotkey;
+        private TextInjectionService? _injector;
         
-        private TranscriptionWindow _transcriptionWindow;
-        private NotifyIcon _trayIcon;
-        private Window _hiddenHotkeyWindow;
+        private TranscriptionWindow? _transcriptionWindow;
+        private NotifyIcon? _trayIcon;
 
         private bool _isRecording = false;
 
         protected override void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
+            this.ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
-            // 1. Create a hidden WPF window just to host the global hotkey message loop
-            _hiddenHotkeyWindow = new Window { Width = 0, Height = 0, WindowStyle = WindowStyle.None, ShowInTaskbar = false, Visibility = Visibility.Hidden };
-            _hiddenHotkeyWindow.Show();
-            var hwnd = new WindowInteropHelper(_hiddenHotkeyWindow).Handle;
+            try
+            {
+                Console.WriteLine("Initializing LocalVoice UI...");
 
-            // 2. Initialize Services
-            _engine = new EngineProcessService();
-            _hotkey = new GlobalHotkeyService();
-            _injector = new TextInjectionService();
+                // 1. Initialize Main UI Window
+                _transcriptionWindow = new TranscriptionWindow();
+                _transcriptionWindow.OnStopRequested += StopRecording;
 
-            _transcriptionWindow = new TranscriptionWindow();
-            _transcriptionWindow.OnStopRequested += StopRecording;
+                // Ensure the Win32 handle is fully created
+                var helper = new WindowInteropHelper(_transcriptionWindow);
+                IntPtr hwnd = helper.EnsureHandle();
+                Console.WriteLine($"Main Window Handle: {hwnd}");
 
-            // Wire up IPC events
-            _engine.OnInterimText += (text) => _transcriptionWindow.SetInterimText(text);
-            _engine.OnCommittedText += HandleCommittedText;
-            _engine.OnVadStart += () => _transcriptionWindow.SetStatus(true);
-            _engine.OnVadEnd += () => _transcriptionWindow.SetStatus(false);
+                // 2. Initialize Services
+                _engine = new EngineProcessService();
+                _hotkey = new GlobalHotkeyService();
+                _injector = new TextInjectionService();
 
-            // Start Python Engine (this will boot the model in the background)
-            _engine.StartEngine();
+                // Wire up IPC events from Python
+                _engine.OnInterimText += (text) => _transcriptionWindow.SetInterimText(text);
+                _engine.OnCommittedText += HandleCommittedText;
+                _engine.OnVadStart += () => _transcriptionWindow.SetStatus(true);
+                _engine.OnVadEnd += () => _transcriptionWindow.SetStatus(false);
 
-            // Register Hotkey (Ctrl + Shift + Space)
-            _hotkey.OnHotKeyPressed += ToggleRecording;
-            _hotkey.Register(hwnd);
+                // Start Python AI Engine
+                _engine.StartEngine();
 
-            // 3. Setup System Tray
-            SetupSystemTray();
+                // Register Global Hotkey (Ctrl + Shift + Space)
+                _hotkey.OnHotKeyPressed += ToggleRecording;
+                _hotkey.Register(hwnd);
+
+                // 3. Setup System Tray with custom drawn microphone icon
+                SetupSystemTray();
+
+                // 4. Show the Transcription Window on startup
+                _transcriptionWindow.Show();
+                _transcriptionWindow.SetStatus(false);
+
+                Console.WriteLine("LocalVoice started successfully!");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("FATAL ERROR: " + ex.ToString());
+                System.IO.File.WriteAllText("crash.log", ex.ToString());
+                System.Windows.MessageBox.Show("Fatal Error: " + ex.Message);
+                Shutdown();
+            }
         }
 
         private void SetupSystemTray()
         {
             _trayIcon = new NotifyIcon
             {
-                Icon = SystemIcons.Application,
+                Icon = CreateMicrophoneIcon(),
                 Visible = true,
                 Text = "LocalVoice (Ctrl+Shift+Space to Dictate)"
             };
 
             var menu = new ContextMenuStrip();
-            menu.Items.Add("Show Transcription Window", null, (s, e) => _transcriptionWindow.Show());
+            menu.Items.Add("Show / Hide Window", null, (s, e) =>
+            {
+                if (_transcriptionWindow != null)
+                {
+                    if (_transcriptionWindow.IsVisible) _transcriptionWindow.Hide();
+                    else _transcriptionWindow.Show();
+                }
+            });
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("Exit", null, (s, e) => Shutdown());
 
             _trayIcon.ContextMenuStrip = menu;
-            _trayIcon.DoubleClick += (s, e) => _transcriptionWindow.Show();
+            _trayIcon.DoubleClick += (s, e) =>
+            {
+                if (_transcriptionWindow != null)
+                {
+                    _transcriptionWindow.Show();
+                    _transcriptionWindow.Activate();
+                }
+            };
+        }
+
+        private Icon CreateMicrophoneIcon()
+        {
+            var bmp = new Bitmap(32, 32);
+            using (var g = Graphics.FromImage(bmp))
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                
+                // Blue badge background
+                using (var brush = new SolidBrush(Color.FromArgb(37, 99, 235)))
+                {
+                    g.FillEllipse(brush, 1, 1, 30, 30);
+                }
+
+                // White mic capsule
+                using (var brush = new SolidBrush(Color.White))
+                {
+                    g.FillRoundedRectangle(brush, new Rectangle(12, 6, 8, 14), new System.Drawing.Size(4, 4));
+                }
+
+                // White mic cradle
+                using (var pen = new Pen(Color.White, 2))
+                {
+                    g.DrawArc(pen, 9, 10, 14, 12, 0, 180);
+                    g.DrawLine(pen, 16, 22, 16, 26);
+                    g.DrawLine(pen, 12, 26, 20, 26);
+                }
+            }
+            return Icon.FromHandle(bmp.GetHicon());
         }
 
         private void ToggleRecording()
@@ -86,42 +150,43 @@ namespace LocalVoice.App
         private void StartRecording()
         {
             _isRecording = true;
-            _transcriptionWindow.SetStatus(true);
-            
-            // Check if we should show the floating window
-            // In a real robust implementation, we'd check GetForegroundWindow() and UIA here
-            // For now, if the transcription window is visible, we route there. If not, we just inject.
-            // Let's show the transcription window briefly to indicate listening if it isn't visible,
-            // or we could just trust the user is focused on a text box.
-            
-            _engine.SendCommand("start");
+            try { System.Media.SystemSounds.Asterisk.Play(); } catch { }
+
+            if (_transcriptionWindow != null)
+            {
+                _transcriptionWindow.Show();
+                _transcriptionWindow.SetStatus(true);
+            }
+
+            _engine?.SendCommand("start");
         }
 
         private void StopRecording()
         {
             _isRecording = false;
-            _transcriptionWindow.SetStatus(false);
-            _engine.SendCommand("stop");
+            try { System.Media.SystemSounds.Beep.Play(); } catch { }
+
+            if (_transcriptionWindow != null)
+            {
+                _transcriptionWindow.SetStatus(false);
+            }
+
+            _engine?.SendCommand("stop");
         }
 
         private void HandleCommittedText(string text)
         {
             if (string.IsNullOrWhiteSpace(text)) return;
 
-            // If the floating window is visible and active, or if we determined no text field is focused,
-            // we append to the floating window.
-            // For now, as a solid V1, we will inject via keyboard AND show it on the floating window if open.
-            
             Dispatcher.Invoke(() =>
             {
-                if (_transcriptionWindow.IsVisible)
+                if (_transcriptionWindow != null && _transcriptionWindow.IsVisible)
                 {
                     _transcriptionWindow.AppendCommittedText(text);
                 }
                 
-                // Inject via keyboard simulation (SendInput)
-                // We use SendInput so it goes into whatever the user's caret is focused on!
-                _injector.InjectText(text);
+                // Inject via SendInput (Unicode)
+                _injector?.InjectText(text);
             });
         }
 
@@ -137,6 +202,26 @@ namespace LocalVoice.App
             }
             
             base.OnExit(e);
+        }
+    }
+
+    public static class GraphicsExtensions
+    {
+        public static void FillRoundedRectangle(this Graphics g, Brush brush, Rectangle bounds, System.Drawing.Size cornerRadius)
+        {
+            using (var path = new GraphicsPath())
+            {
+                int arcWidth = cornerRadius.Width * 2;
+                int arcHeight = cornerRadius.Height * 2;
+
+                path.AddArc(bounds.X, bounds.Y, arcWidth, arcHeight, 180, 90);
+                path.AddArc(bounds.Right - arcWidth, bounds.Y, arcWidth, arcHeight, 270, 90);
+                path.AddArc(bounds.Right - arcWidth, bounds.Bottom - arcHeight, arcWidth, arcHeight, 0, 90);
+                path.AddArc(bounds.X, bounds.Bottom - arcHeight, arcWidth, arcHeight, 90, 90);
+                path.CloseFigure();
+
+                g.FillPath(brush, path);
+            }
         }
     }
 }

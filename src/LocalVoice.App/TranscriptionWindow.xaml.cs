@@ -11,7 +11,6 @@ namespace LocalVoice.App
     {
         private const int GWL_EXSTYLE = -20;
         private const int WS_EX_NOACTIVATE = 0x08000000;
-        private const int WS_EX_TOOLWINDOW = 0x00000080;
 
         [DllImport("user32.dll")]
         public static extern IntPtr SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
@@ -19,21 +18,12 @@ namespace LocalVoice.App
         [DllImport("user32.dll")]
         public static extern int GetWindowLong(IntPtr hWnd, int nIndex);
 
-        public event Action OnStopRequested;
+        public event Action? OnStopRequested;
 
         public TranscriptionWindow()
         {
             InitializeComponent();
-            this.SourceInitialized += TranscriptionWindow_SourceInitialized;
             this.MouseLeftButtonDown += (s, e) => { this.DragMove(); };
-        }
-
-        private void TranscriptionWindow_SourceInitialized(object? sender, EventArgs e)
-        {
-            // Apply WS_EX_NOACTIVATE so the window doesn't steal focus from active applications
-            var helper = new WindowInteropHelper(this);
-            int exStyle = GetWindowLong(helper.Handle, GWL_EXSTYLE);
-            SetWindowLong(helper.Handle, GWL_EXSTYLE, exStyle | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW);
         }
 
         public void SetStatus(bool isRecording)
@@ -41,7 +31,9 @@ namespace LocalVoice.App
             Dispatcher.Invoke(() =>
             {
                 StatusText.Text = isRecording ? "Listening..." : "Idle";
-                StatusDot.Fill = isRecording ? new SolidColorBrush(Colors.Red) : new SolidColorBrush(Colors.Gray);
+                var hexColor = isRecording ? "#EF4444" : "#10B981";
+                var color = (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(hexColor);
+                StatusDot.Fill = new SolidColorBrush(color);
             });
         }
 
@@ -50,7 +42,7 @@ namespace LocalVoice.App
             Dispatcher.Invoke(() =>
             {
                 CommittedTextBlock.Text += text + " ";
-                InterimTextBlock.Text = ""; // Clear interim when committed
+                InterimTextBlock.Text = "";
             });
         }
 
@@ -72,7 +64,10 @@ namespace LocalVoice.App
         {
             try
             {
-                System.Windows.Clipboard.SetText(CommittedTextBlock.Text.Trim());
+                if (!string.IsNullOrWhiteSpace(CommittedTextBlock.Text))
+                {
+                    System.Windows.Clipboard.SetText(CommittedTextBlock.Text.Trim());
+                }
             }
             catch { /* Ignore clipboard locks */ }
         }
