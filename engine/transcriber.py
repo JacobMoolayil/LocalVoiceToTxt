@@ -48,6 +48,7 @@ VOCABULARY_MAP = [
 
 class Transcriber:
     def __init__(self, config: AppConfig):
+        self.config = config
         try:
             print(f"Loading Whisper model '{config.model_size}' on {config.device} ({config.compute_type})...", file=sys.stderr)
             self.model = WhisperModel(
