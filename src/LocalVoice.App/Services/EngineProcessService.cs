@@ -42,8 +42,8 @@ namespace LocalVoice.App.Services
                 if (File.Exists(altEng)) enginePath = altEng;
             }
 
-            Console.WriteLine($"[IPC] Launching Engine: {pythonPath}");
-            Console.WriteLine($"[IPC] Script Path: {enginePath}");
+            AppSettingsService.Log($"[IPC] Launching Engine: {pythonPath}");
+            AppSettingsService.Log($"[IPC] Script Path: {enginePath}");
 
             _process = new Process
             {
@@ -61,7 +61,7 @@ namespace LocalVoice.App.Services
             };
 
             _process.OutputDataReceived += HandleEngineOutput;
-            _process.ErrorDataReceived += (s, e) => { if (e.Data != null) Console.WriteLine(e.Data); };
+            _process.ErrorDataReceived += (s, e) => { if (e.Data != null) AppSettingsService.Log(e.Data); };
 
             _process.Start();
             _process.BeginOutputReadLine();
@@ -76,7 +76,7 @@ namespace LocalVoice.App.Services
 
             try
             {
-                Console.WriteLine($"[IPC Message] {e.Data}");
+                AppSettingsService.Log($"[IPC Message] {e.Data}");
                 using var doc = JsonDocument.Parse(e.Data);
                 if (doc.RootElement.TryGetProperty("event", out var ev))
                 {

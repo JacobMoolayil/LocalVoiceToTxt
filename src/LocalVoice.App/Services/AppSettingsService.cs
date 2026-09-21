@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
@@ -11,14 +12,36 @@ namespace LocalVoice.App.Services
         private const string APP_KEY = @"Software\LocalVoice";
         private const string APP_NAME = "LocalVoice";
 
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool AllocConsole();
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool FreeConsole();
+
         [DllImport("kernel32.dll")]
         private static extern IntPtr GetConsoleWindow();
 
-        [DllImport("user32.dll")]
-        private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+        private static readonly List<string> _logHistory = new();
+        private static readonly object _lock = new();
 
-        private const int SW_HIDE = 0;
-        private const int SW_SHOW = 5;
+        public static void Log(string message)
+        {
+            string entry = $"[{DateTime.Now:HH:mm:ss}] {message}";
+            lock (_lock)
+            {
+                if (_logHistory.Count > 1000) _logHistory.RemoveAt(0);
+                _logHistory.Add(entry);
+            }
+
+            if (GetConsoleWindow() != IntPtr.Zero)
+            {
+                try
+                {
+                    Console.WriteLine(entry);
+                }
+                catch { }
+            }
+        }
 
         public static bool IsStartupEnabled()
         {
@@ -45,17 +68,17 @@ namespace LocalVoice.App.Services
                     string exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName 
                         ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "LocalVoice.App.exe");
                     key.SetValue(APP_NAME, $"\"{exePath}\"");
-                    Console.WriteLine($"[Settings] Windows startup enabled for: {exePath}");
+                    Log($"Windows startup enabled for: {exePath}");
                 }
                 else
                 {
                     key.DeleteValue(APP_NAME, false);
-                    Console.WriteLine("[Settings] Windows startup disabled.");
+                    Log("Windows startup disabled.");
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[Settings Error] Failed to update startup registry: {ex.Message}");
+                Log($"Failed to update startup registry: {ex.Message}");
             }
         }
 
@@ -71,7 +94,7 @@ namespace LocalVoice.App.Services
                 }
             }
             catch { }
-            return true; // Default to visible
+            return false; // Default: OFF (no terminal on launch)
         }
 
         public static void SetTerminalSetting(bool show)
@@ -83,23 +106,47 @@ namespace LocalVoice.App.Services
             }
             catch { }
 
-            SetConsoleVisible(show);
+            ApplyConsoleState(show);
         }
 
-        public static void SetConsoleVisible(bool visible)
+        public static void ApplyConsoleState(bool show)
         {
-            try
+            IntPtr hWnd = GetConsoleWindow();
+
+            if (show)
             {
-                IntPtr hWnd = GetConsoleWindow();
-                if (hWnd != IntPtr.Zero)
+                if (hWnd == IntPtr.Zero)
                 {
-                    ShowWindow(hWnd, visible ? SW_SHOW : SW_HIDE);
-                    Console.WriteLine($"[Settings] Console visibility set to: {visible}");
+                    AllocConsole();
+                    try
+                    {
+                        Console.Title = "LocalVoice - Live Logs";
+                        var stdOut = new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true };
+                        Console.SetOut(stdOut);
+                        var stdErr = new StreamWriter(Console.OpenStandardError()) { AutoFlush = true };
+                        Console.SetError(stdErr);
+                    }
+                    catch { }
+
+                    // Replay all past logs
+                    lock (_lock)
+                    {
+                        Console.WriteLine("=======================================================");
+                        Console.WriteLine(" LocalVoice Logs (Terminal enabled by user)");
+                        Console.WriteLine("=======================================================");
+                        foreach (var line in _logHistory)
+                        {
+                            Console.WriteLine(line);
+                        }
+                    }
                 }
             }
-            catch (Exception ex)
+            else
             {
-                Console.WriteLine($"[Settings Error] ShowWindow error: {ex.Message}");
+                if (hWnd != IntPtr.Zero)
+                {
+                    FreeConsole();
+                }
             }
         }
     }

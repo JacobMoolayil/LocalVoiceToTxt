@@ -65,11 +65,11 @@ namespace LocalVoice.App
                 _transcriptionWindow.Show();
                 _transcriptionWindow.SetStatus(false);
 
-                // Apply saved terminal visibility setting
+                // Apply saved terminal visibility setting (creates console on-demand if enabled)
                 bool showTerminal = AppSettingsService.GetTerminalSetting();
-                AppSettingsService.SetConsoleVisible(showTerminal);
+                AppSettingsService.ApplyConsoleState(showTerminal);
 
-                Console.WriteLine("LocalVoice started successfully!");
+                AppSettingsService.Log("LocalVoice started successfully!");
             }
             catch (Exception ex)
             {
