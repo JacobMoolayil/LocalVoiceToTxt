@@ -1,0 +1,5 @@
+# ai.txt - Machine-readable permissions for AI crawlers
+# See: https://spawning.ai/ai-txt
+
+User-agent: *
+Disallow: /

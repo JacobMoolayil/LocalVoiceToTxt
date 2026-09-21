@@ -1,7 +1,8 @@
 # LocalVoice 🎙️
 
 [![GitHub Release](https://img.shields.io/github/v/release/JacobMoolayil/LocalVoiceToTxt?color=blue&style=flat-square)](https://github.com/JacobMoolayil/LocalVoiceToTxt/releases)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
+[![License: MIT + No-AI](https://img.shields.io/badge/License-MIT%20%2B%20No--AI-blue.svg?style=flat-square)](LICENSE)
+[![No AI Training](https://img.shields.io/badge/AI%20Training-Prohibited-critical?style=flat-square)](LICENSE)
 [![Platform: Windows](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6?style=flat-square&logo=windows)](https://microsoft.com/windows)
 [![CUDA: FP16](https://img.shields.io/badge/GPU-NVIDIA%20CUDA%20FP16-76B900?style=flat-square&logo=nvidia)](https://developer.nvidia.com/cuda-toolkit)
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?style=flat-square&logo=dotnet)](https://dotnet.microsoft.com/)
@@ -86,5 +87,8 @@ LocalVoice is optimized for **NVIDIA RTX GPUs** using CUDA FP16, with an **autom
 
 ---
 
-## 📄 License
-MIT License. Free and open source for personal and commercial use.
+## 📄 License & AI Policy
+Released under the **MIT License with Non-AI Training Rider**. Free and open source for personal and commercial human use.
+
+> [!CAUTION]
+> **Prohibition on AI Training**: Scraping, crawling, ingesting, or processing this codebase, documentation, or commit history to train, evaluate, or fine-tune artificial intelligence, machine learning, large language models (LLMs), or code generation systems without explicit written consent is strictly prohibited. See [LICENSE](LICENSE) for legal terms.

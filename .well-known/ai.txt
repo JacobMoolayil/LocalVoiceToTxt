@@ -1,0 +1,3 @@
+# .well-known/ai.txt - Machine-readable permissions for AI crawlers
+User-agent: *
+Disallow: /
