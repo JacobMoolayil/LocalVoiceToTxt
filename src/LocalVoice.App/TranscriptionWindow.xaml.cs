@@ -1,29 +1,58 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using LocalVoice.App.Services;
 
 namespace LocalVoice.App
 {
     public partial class TranscriptionWindow : Window
     {
-        private const int GWL_EXSTYLE = -20;
-        private const int WS_EX_NOACTIVATE = 0x08000000;
-
-        [DllImport("user32.dll")]
-        public static extern IntPtr SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
-
-        [DllImport("user32.dll")]
-        public static extern int GetWindowLong(IntPtr hWnd, int nIndex);
-
         public event Action? OnStopRequested;
+        public event Action<int>? OnDeviceSelected;
+
+        private bool _isPopulating = false;
 
         public TranscriptionWindow()
         {
             InitializeComponent();
             this.MouseLeftButtonDown += (s, e) => { this.DragMove(); };
+        }
+
+        public void PopulateDevices(List<AudioDeviceInfo> devices, int selectedId)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                _isPopulating = true;
+                try
+                {
+                    MicComboBox.ItemsSource = devices;
+                    MicComboBox.SelectedValue = selectedId;
+                    if (MicComboBox.SelectedIndex == -1 && devices.Count > 0)
+                    {
+                        MicComboBox.SelectedIndex = 0;
+                    }
+                }
+                finally
+                {
+                    _isPopulating = false;
+                }
+            });
+        }
+
+        private void MicComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_isPopulating) return;
+
+            if (MicComboBox.SelectedValue is int deviceId)
+            {
+                Console.WriteLine($"[UI] Microphone changed by user to: ID {deviceId}");
+                OnDeviceSelected?.Invoke(deviceId);
+            }
         }
 
         public void SetStatus(bool isRecording)
@@ -69,7 +98,7 @@ namespace LocalVoice.App
                     System.Windows.Clipboard.SetText(CommittedTextBlock.Text.Trim());
                 }
             }
-            catch { /* Ignore clipboard locks */ }
+            catch { }
         }
 
         private void BtnStop_Click(object sender, RoutedEventArgs e)

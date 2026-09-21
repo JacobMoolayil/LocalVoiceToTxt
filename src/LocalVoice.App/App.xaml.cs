@@ -47,6 +47,9 @@ namespace LocalVoice.App
                 _engine.OnCommittedText += HandleCommittedText;
                 _engine.OnVadStart += () => _transcriptionWindow.SetStatus(true);
                 _engine.OnVadEnd += () => _transcriptionWindow.SetStatus(false);
+                _engine.OnDeviceListReceived += (devs, selId) => _transcriptionWindow.PopulateDevices(devs, selId);
+
+                _transcriptionWindow.OnDeviceSelected += (id) => _engine.SetDevice(id);
 
                 // Start Python AI Engine
                 _engine.StartEngine();

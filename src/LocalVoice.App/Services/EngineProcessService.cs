@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
@@ -6,6 +7,13 @@ using System.Threading.Tasks;
 
 namespace LocalVoice.App.Services
 {
+    public class AudioDeviceInfo
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = "";
+        public bool IsDefault { get; set; }
+    }
+
     public class EngineProcessService : IDisposable
     {
         private Process? _process;
@@ -15,6 +23,7 @@ namespace LocalVoice.App.Services
         public event Action<string>? OnCommittedText;
         public event Action? OnVadStart;
         public event Action? OnVadEnd;
+        public event Action<List<AudioDeviceInfo>, int>? OnDeviceListReceived;
 
         public void StartEngine()
         {
@@ -22,10 +31,8 @@ namespace LocalVoice.App.Services
             var enginePath = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "..", "..", "..", "engine", "engine_host.py"));
             var pythonPath = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "..", "..", "..", "engine", "venv", "Scripts", "python.exe"));
 
-            // Check if paths exist
             if (!File.Exists(pythonPath))
             {
-                // Fallback for published/relative layouts
                 var altPy = Path.GetFullPath(Path.Combine(baseDir, "engine", "venv", "Scripts", "python.exe"));
                 if (File.Exists(altPy)) pythonPath = altPy;
             }
@@ -86,12 +93,42 @@ namespace LocalVoice.App.Services
                         var text = doc.RootElement.GetProperty("text").GetString();
                         if (!string.IsNullOrEmpty(text)) OnCommittedText?.Invoke(text);
                     }
+                    else if (eventType == "devices")
+                    {
+                        var list = new List<AudioDeviceInfo>();
+                        int selectedId = -1;
+                        if (doc.RootElement.TryGetProperty("selected_id", out var selElem))
+                        {
+                            selectedId = selElem.GetInt32();
+                        }
+                        if (doc.RootElement.TryGetProperty("devices", out var devsElem) && devsElem.ValueKind == JsonValueKind.Array)
+                        {
+                            foreach (var item in devsElem.EnumerateArray())
+                            {
+                                int id = item.GetProperty("id").GetInt32();
+                                string name = item.GetProperty("name").GetString() ?? "";
+                                bool isDef = item.GetProperty("is_default").GetBoolean();
+                                list.Add(new AudioDeviceInfo { Id = id, Name = name, IsDefault = isDef });
+                            }
+                        }
+                        OnDeviceListReceived?.Invoke(list, selectedId);
+                    }
                 }
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[IPC Parse Error] {ex.Message} | Line: {e.Data}");
             }
+        }
+
+        public void SetDevice(int deviceId)
+        {
+            SendCommandWithPayload("set_device", new { device_id = deviceId });
+        }
+
+        public void RequestDeviceList()
+        {
+            SendCommand("list_devices");
         }
 
         public void SendCommand(string command)
@@ -101,6 +138,29 @@ namespace LocalVoice.App.Services
                 try
                 {
                     var cmdJson = JsonSerializer.Serialize(new { cmd = command });
+                    _stdin.WriteLine(cmdJson);
+                    _stdin.Flush();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[IPC Send Error] {ex.Message}");
+                }
+            }
+        }
+
+        public void SendCommandWithPayload(string command, object payload)
+        {
+            if (_stdin != null && _process != null && !_process.HasExited)
+            {
+                try
+                {
+                    var dict = new Dictionary<string, object>();
+                    dict["cmd"] = command;
+                    foreach (var prop in payload.GetType().GetProperties())
+                    {
+                        dict[prop.Name] = prop.GetValue(payload) ?? "";
+                    }
+                    var cmdJson = JsonSerializer.Serialize(dict);
                     _stdin.WriteLine(cmdJson);
                     _stdin.Flush();
                 }

@@ -6,7 +6,7 @@ import traceback
 import numpy as np
 
 from config import AppConfig
-from audio_capture import AudioCapture
+from audio_capture import AudioCapture, get_audio_devices
 from vad_chunker import SileroVAD
 from transcriber import Transcriber
 
@@ -109,8 +109,17 @@ class EngineHost:
     def start(self):
         self.worker_thread.start()
         self._emit("ready")
+        
+        # Emit available audio devices
+        devs, def_id = get_audio_devices()
+        self._emit("devices", {
+            "devices": devs,
+            "selected_id": self.audio_capture.selected_device_id
+        })
+        
         print("\n=======================================================", file=sys.stderr)
         print(" LocalVoice Engine is READY! (RTX 3050 CUDA FP16)", file=sys.stderr)
+        print(" Default Microphone: Windows Default", file=sys.stderr)
         print(" Press Ctrl+Shift+Space to Dictate", file=sys.stderr)
         print("=======================================================\n", file=sys.stderr)
         
@@ -161,6 +170,18 @@ class EngineHost:
                     self.is_speaking = False
                     self.all_session_audio = []
                     self._emit("status", {"recording": False})
+                    
+                elif action == "list_devices":
+                    devs, def_id = get_audio_devices()
+                    self._emit("devices", {
+                        "devices": devs,
+                        "selected_id": self.audio_capture.selected_device_id
+                    })
+                    
+                elif action == "set_device":
+                    dev_id = cmd.get("device_id", -1)
+                    self.audio_capture.set_device(dev_id)
+                    self._emit("device_changed", {"device_id": dev_id})
                     
                 elif action == "exit":
                     self.is_running = False
