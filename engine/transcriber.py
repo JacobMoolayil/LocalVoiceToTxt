@@ -4,12 +4,21 @@ import re
 
 # Automatically discover and add CUDA DLLs before importing ctranslate2/faster_whisper
 try:
-    import nvidia.cudnn
     import nvidia.cublas
-    os.add_dll_directory(os.path.join(os.path.dirname(nvidia.cudnn.__file__), "bin"))
-    os.add_dll_directory(os.path.join(os.path.dirname(nvidia.cublas.__file__), "bin"))
+    import nvidia.cudnn
+    cublas_dir = list(nvidia.cublas.__path__)[0]
+    cudnn_dir = list(nvidia.cudnn.__path__)[0]
+    cublas_bin = os.path.join(cublas_dir, 'bin')
+    cudnn_bin = os.path.join(cudnn_dir, 'bin')
+    
+    os.environ['PATH'] = cublas_bin + os.pathsep + cudnn_bin + os.pathsep + os.environ.get('PATH', '')
+    if hasattr(os, 'add_dll_directory'):
+        if os.path.exists(cublas_bin):
+            os.add_dll_directory(cublas_bin)
+        if os.path.exists(cudnn_bin):
+            os.add_dll_directory(cudnn_bin)
 except Exception as e:
-    pass
+    print(f"[CUDA DLL Warning] {e}", file=sys.stderr)
 
 from faster_whisper import WhisperModel
 import numpy as np
@@ -79,7 +88,7 @@ class Transcriber:
             beam_size=5,
             language=self.config.language,
             initial_prompt=self.config.initial_prompt,
-            vad_filter=False, # We handle VAD externally
+            vad_filter=False,
             without_timestamps=True
         )
         
