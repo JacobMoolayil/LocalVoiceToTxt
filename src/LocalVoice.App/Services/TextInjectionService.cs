@@ -1,106 +1,82 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Automation;
+using System.Windows.Forms;
 
 namespace LocalVoice.App.Services
 {
     public class TextInjectionService
     {
-        [DllImport("user32.dll", SetLastError = true)]
-        private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+        [DllImport("user32.dll")]
+        private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
 
-        [StructLayout(LayoutKind.Sequential)]
-        private struct INPUT
-        {
-            public uint type;
-            public InputUnion u;
-        }
-
-        [StructLayout(LayoutKind.Explicit)]
-        private struct InputUnion
-        {
-            [FieldOffset(0)] public MOUSEINPUT mi;
-            [FieldOffset(0)] public KEYBDINPUT ki;
-            [FieldOffset(0)] public HARDWAREINPUT hi;
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct KEYBDINPUT
-        {
-            public ushort wVk;
-            public ushort wScan;
-            public uint dwFlags;
-            public uint time;
-            public IntPtr dwExtraInfo;
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct MOUSEINPUT { public int dx; public int dy; public uint mouseData; public uint dwFlags; public uint time; public IntPtr dwExtraInfo; }
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct HARDWAREINPUT { public uint uMsg; public ushort wParamL; public ushort wParamH; }
-
-        private const int INPUT_KEYBOARD = 1;
-        private const uint KEYEVENTF_UNICODE = 0x0004;
+        private const byte VK_CONTROL = 0x11;
+        private const byte VK_V = 0x56;
         private const uint KEYEVENTF_KEYUP = 0x0002;
 
         public void InjectText(string text)
         {
-            if (string.IsNullOrEmpty(text)) return;
-            
-            // For safety and compatibility with all apps (Notepad, VS Code, Slack, Word), 
-            // the most robust injection is synthesizing unicode keyboard events directly.
-            // This avoids destroying user clipboards or failing on UIA ValuePattern locks.
-            SendStringViaSendInput(text + " ");
-        }
+            if (string.IsNullOrWhiteSpace(text)) return;
+            string textToInject = text + " ";
 
-        private void SendStringViaSendInput(string text)
-        {
-            INPUT[] inputs = new INPUT[text.Length * 2];
-            int index = 0;
-
-            foreach (char c in text)
+            try
             {
-                // Key down
-                inputs[index] = new INPUT
+                // 1. Backup user's clipboard
+                string originalText = "";
+                bool hadText = false;
+                try
                 {
-                    type = INPUT_KEYBOARD,
-                    u = new InputUnion
+                    if (System.Windows.Clipboard.ContainsText())
                     {
-                        ki = new KEYBDINPUT
-                        {
-                            wVk = 0,
-                            wScan = c,
-                            dwFlags = KEYEVENTF_UNICODE,
-                            time = 0,
-                            dwExtraInfo = IntPtr.Zero
-                        }
+                        originalText = System.Windows.Clipboard.GetText();
+                        hadText = true;
                     }
-                };
-                index++;
+                }
+                catch { }
 
-                // Key up
-                inputs[index] = new INPUT
+                // 2. Set transcription text
+                try
                 {
-                    type = INPUT_KEYBOARD,
-                    u = new InputUnion
+                    System.Windows.Clipboard.SetText(textToInject);
+                }
+                catch
+                {
+                    System.Windows.Forms.Clipboard.SetText(textToInject);
+                }
+
+                // 3. Synthesize Ctrl + V
+                Thread.Sleep(40);
+                keybd_event(VK_CONTROL, 0, 0, UIntPtr.Zero);
+                keybd_event(VK_V, 0, 0, UIntPtr.Zero);
+                Thread.Sleep(25);
+                keybd_event(VK_V, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+                keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+
+                Console.WriteLine($"[TextInjection] Injected successfully via Safe Clipboard (Ctrl+V): '{textToInject.Trim()}'");
+
+                // 4. Restore original clipboard content
+                if (hadText)
+                {
+                    Task.Run(async () =>
                     {
-                        ki = new KEYBDINPUT
+                        await Task.Delay(250);
+                        try
                         {
-                            wVk = 0,
-                            wScan = c,
-                            dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP,
-                            time = 0,
-                            dwExtraInfo = IntPtr.Zero
+                            System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+                            {
+                                System.Windows.Clipboard.SetText(originalText);
+                            });
                         }
-                    }
-                };
-                index++;
+                        catch { }
+                    });
+                }
             }
-
-            SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT)));
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[TextInjection Error] {ex.Message}");
+            }
         }
     }
 }

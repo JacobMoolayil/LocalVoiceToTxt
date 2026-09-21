@@ -33,7 +33,8 @@ class EngineHost:
         if data is None:
             data = {}
         data['event'] = event_type
-        print(json.dumps(data), flush=True)
+        payload = json.dumps(data)
+        print(payload, flush=True)
 
     def _worker_loop(self):
         chunks_per_second = self.config.sample_rate / self.config.chunk_size
@@ -54,19 +55,18 @@ class EngineHost:
                 rms = float(np.sqrt(np.mean(chunk**2)))
                 log_counter += 1
                 if log_counter % 30 == 0 and self.audio_capture._is_recording:
-                    # Print audio level pulse every ~1 sec while recording
                     print(f"[Mic Audio Level] RMS: {rms:.5f}", file=sys.stderr)
 
-                # Run VAD
+                # Run VAD & Energy test
                 prob = self.vad.is_speech(chunk)
-                is_speech_now = prob > self.config.vad_threshold
+                is_speech_now = (prob > self.config.vad_threshold) or (rms > self.config.energy_threshold)
                 
                 if is_speech_now:
                     if not self.is_speaking:
                         self.is_speaking = True
                         self.speech_buffer = []
                         self._emit("vad_start")
-                        print(f"[VAD] Speech started! (prob: {prob:.2f}, rms: {rms:.4f})", file=sys.stderr)
+                        print(f"[VAD] Speech started! (rms: {rms:.4f})", file=sys.stderr)
                     
                     self.silence_chunks = 0
                     self.speech_buffer.append(chunk)
@@ -147,12 +147,12 @@ class EngineHost:
                             self.has_committed_in_session = True
                         self.speech_buffer = []
                     
-                    # 2. Fail-safe: If nothing was committed, but audio was recorded
+                    # 2. Fail-safe: If nothing was committed, transcribe full audio
                     elif not self.has_committed_in_session and len(self.all_session_audio) > int(16000 * 0.4 / 512):
                         audio_data = np.concatenate(self.all_session_audio)
                         rms = float(np.sqrt(np.mean(audio_data**2)))
                         print(f"[Fail-safe Check] Total audio duration: {len(audio_data)/16000:.1f}s, RMS: {rms:.5f}", file=sys.stderr)
-                        if rms > 0.001: # Check if there is actual sound
+                        if rms > 0.001:
                             text = self.transcriber.transcribe(audio_data)
                             if text:
                                 print(f"[Transcribed Fail-safe] {text}", file=sys.stderr)

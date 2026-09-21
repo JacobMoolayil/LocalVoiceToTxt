@@ -69,6 +69,7 @@ namespace LocalVoice.App.Services
 
             try
             {
+                Console.WriteLine($"[IPC Message] {e.Data}");
                 using var doc = JsonDocument.Parse(e.Data);
                 if (doc.RootElement.TryGetProperty("event", out var ev))
                 {

@@ -135,6 +135,14 @@ namespace LocalVoice.App
             return Icon.FromHandle(bmp.GetHicon());
         }
 
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern IntPtr GetForegroundWindow();
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        private IntPtr _targetHwnd = IntPtr.Zero;
+
         private void ToggleRecording()
         {
             if (_isRecording)
@@ -149,6 +157,9 @@ namespace LocalVoice.App
 
         private void StartRecording()
         {
+            _targetHwnd = GetForegroundWindow();
+            Console.WriteLine($"[Focus] Target Window captured: {_targetHwnd}");
+
             _isRecording = true;
             try { System.Media.SystemSounds.Asterisk.Play(); } catch { }
 
@@ -176,16 +187,26 @@ namespace LocalVoice.App
 
         private void HandleCommittedText(string text)
         {
+            Console.WriteLine($"[App] HandleCommittedText received: '{text}'");
             if (string.IsNullOrWhiteSpace(text)) return;
 
             Dispatcher.Invoke(() =>
             {
-                if (_transcriptionWindow != null && _transcriptionWindow.IsVisible)
+                if (_transcriptionWindow != null)
                 {
                     _transcriptionWindow.AppendCommittedText(text);
+                    if (!_transcriptionWindow.IsVisible) _transcriptionWindow.Show();
                 }
                 
-                // Inject via SendInput (Unicode)
+                // Return focus to target application before pasting
+                if (_targetHwnd != IntPtr.Zero)
+                {
+                    Console.WriteLine($"[Focus] Restoring focus to target window: {_targetHwnd}");
+                    SetForegroundWindow(_targetHwnd);
+                    System.Threading.Thread.Sleep(70);
+                }
+
+                // Inject via Safe Clipboard (Ctrl+V)
                 _injector?.InjectText(text);
             });
         }

@@ -18,14 +18,14 @@ try:
         if os.path.exists(cudnn_bin):
             os.add_dll_directory(cudnn_bin)
 except Exception as e:
-    print(f"[CUDA DLL Warning] {e}", file=sys.stderr)
+    pass
 
 from faster_whisper import WhisperModel
 import numpy as np
 from config import AppConfig
 
 PUNCTUATION_MAP = [
-    (r'\b(comma|coma)\b', ','),
+    (r'\b(comma|coma|goma|koma)\b', ','),
     (r'\b(period|full stop|fullstop)\b', '.'),
     (r'\b(question mark)\b', '?'),
     (r'\b(exclamation mark|exclamation point)\b', '!'),
@@ -36,14 +36,14 @@ PUNCTUATION_MAP = [
 ]
 
 VOCABULARY_MAP = [
-    (r'\bgame\s*object\b', 'GameObject'),
-    (r'\bmono\s*behaviour\b', 'MonoBehaviour'),
-    (r'\bnav\s*mesh\s*agent\b', 'NavMeshAgent'),
-    (r'\bscriptable\s*object\b', 'ScriptableObject'),
-    (r'\bc\s*sharp\b', 'C#'),
-    (r'\bc\s*plus\s*plus\b', 'C++'),
-    (r'\bdo\s*tween\b', 'DOTween'),
-    (r'\bunreal\s*engine\b', 'Unreal Engine'),
+    (r'\b(shisha|c sharp|see sharp)\b', 'C#'),
+    (r'\b(game\s*object)\b', 'GameObject'),
+    (r'\b(mono\s*behaviour)\b', 'MonoBehaviour'),
+    (r'\b(nav\s*mesh\s*agent)\b', 'NavMeshAgent'),
+    (r'\b(scriptable\s*object)\b', 'ScriptableObject'),
+    (r'\b(c\s*plus\s*plus)\b', 'C++'),
+    (r'\b(do\s*tween)\b', 'DOTween'),
+    (r'\b(unreal\s*engine)\b', 'Unreal Engine'),
 ]
 
 class Transcriber:
@@ -71,16 +71,15 @@ class Transcriber:
         for pattern, repl in PUNCTUATION_MAP:
             text = re.sub(pattern, repl, text, flags=re.IGNORECASE)
             
-        # 3. Clean up spaces before punctuation
+        # 3. Clean up spaces and duplicate punctuation
+        text = re.sub(r'[,]+', ',', text)
+        text = re.sub(r'[.]+', '.', text)
+        text = re.sub(r'([,])\.', r'\1', text)
         text = re.sub(r'\s+([,.\?!:;])', r'\1', text)
         return text.strip()
 
     def transcribe(self, audio: np.ndarray) -> str:
-        """
-        Transcribes the given 16kHz float32 audio array.
-        Returns the transcription string.
-        """
-        if len(audio) < 1600: # Less than 100ms
+        if len(audio) < 1600:
             return ""
 
         segments, info = self.model.transcribe(
