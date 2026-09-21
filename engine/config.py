@@ -1,6 +1,5 @@
-import os
-from dataclasses import dataclass, field
-from typing import List, Optional
+from dataclasses import dataclass
+from typing import Optional
 
 @dataclass
 class AppConfig:
@@ -8,19 +7,16 @@ class AppConfig:
     sample_rate: int = 16000
     chunk_size: int = 512 # 32ms at 16kHz
     
-    # VAD Settings
-    vad_threshold: float = 0.5
-    min_speech_duration_ms: int = 250
-    min_silence_duration_ms: int = 500 # The time to wait before finalizing a chunk
+    # VAD Settings (0.35 is sensitive and responsive)
+    vad_threshold: float = 0.35
+    min_speech_duration_ms: int = 200
+    min_silence_duration_ms: int = 500 # Wait 500ms pause to commit
     
     # Whisper Settings
-    model_size: str = "small" # options: tiny, base, small, medium
-    compute_type: str = "float16" # float16 for CUDA, int8 for CPU
+    model_size: str = "small"
+    compute_type: str = "float16" # CUDA FP16
     device: str = "cuda"
     language: Optional[str] = None # None means auto-detect
     
-    # Vocabulary & Punctuation
+    # Initial vocabulary bias prompt
     initial_prompt: str = "Unity, Unreal Engine, GameObject, MonoBehaviour, NavMeshAgent, ScriptableObject, C#, C++, DOTween"
-    
-    # IPC Settings
-    ipc_mode: str = "stdio" # "stdio" or "named_pipe"
