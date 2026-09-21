@@ -48,16 +48,24 @@ VOCABULARY_MAP = [
 
 class Transcriber:
     def __init__(self, config: AppConfig):
-        self.config = config
-        print(f"Loading Whisper model '{config.model_size}' on {config.device} ({config.compute_type})...", file=sys.stderr)
-        
-        self.model = WhisperModel(
-            config.model_size,
-            device=config.device,
-            compute_type=config.compute_type,
-            local_files_only=False
-        )
-        print("Whisper model loaded.", file=sys.stderr)
+        try:
+            print(f"Loading Whisper model '{config.model_size}' on {config.device} ({config.compute_type})...", file=sys.stderr)
+            self.model = WhisperModel(
+                config.model_size,
+                device=config.device,
+                compute_type=config.compute_type,
+                local_files_only=False
+            )
+            print("Whisper model loaded on GPU (CUDA FP16).", file=sys.stderr)
+        except Exception as e:
+            print(f"[Warning] GPU acceleration unavailable ({e}). Falling back to CPU mode (int8)...", file=sys.stderr)
+            self.model = WhisperModel(
+                config.model_size,
+                device="cpu",
+                compute_type="int8",
+                local_files_only=False
+            )
+            print("Whisper model loaded on CPU (int8 mode).", file=sys.stderr)
 
     def _post_process(self, text: str) -> str:
         if not text:
