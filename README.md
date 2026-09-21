@@ -9,6 +9,8 @@
 [![Python](https://img.shields.io/badge/Python-3.13-3776AB?style=flat-square&logo=python)](https://python.org)
 [![faster-whisper](https://img.shields.io/badge/AI-faster--whisper-orange?style=flat-square)](https://github.com/SYSTRAN/faster-whisper)
 
+<img width="500" height="264" alt="LocalVoiceToText_Demo" src="https://github.com/user-attachments/assets/77f9f943-0174-4023-9d15-4f89c0ed7ba3" />
+
 A lightweight, completely offline, low-latency Windows voice-to-text dictation application powered by **faster-whisper (CTranslate2)** on your **NVIDIA RTX GPU** with **Silero VAD v5** and **automatic CPU fallback**.
 
 > **Press one global hotkey (`Ctrl + Shift + Space`) → speak naturally → text appears wherever your cursor is.**
