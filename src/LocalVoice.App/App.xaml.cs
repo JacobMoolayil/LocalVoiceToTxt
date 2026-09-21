@@ -65,6 +65,10 @@ namespace LocalVoice.App
                 _transcriptionWindow.Show();
                 _transcriptionWindow.SetStatus(false);
 
+                // Apply saved terminal visibility setting
+                bool showTerminal = AppSettingsService.GetTerminalSetting();
+                AppSettingsService.SetConsoleVisible(showTerminal);
+
                 Console.WriteLine("LocalVoice started successfully!");
             }
             catch (Exception ex)
@@ -93,6 +97,11 @@ namespace LocalVoice.App
                     if (_transcriptionWindow.IsVisible) _transcriptionWindow.Hide();
                     else _transcriptionWindow.Show();
                 }
+            });
+            menu.Items.Add("Toggle Terminal", null, (s, e) =>
+            {
+                bool cur = AppSettingsService.GetTerminalSetting();
+                AppSettingsService.SetTerminalSetting(!cur);
             });
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("Exit", null, (s, e) => Shutdown());

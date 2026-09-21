@@ -21,6 +21,32 @@ namespace LocalVoice.App
         {
             InitializeComponent();
             this.MouseLeftButtonDown += (s, e) => { this.DragMove(); };
+            this.Loaded += TranscriptionWindow_Loaded;
+        }
+
+        private void TranscriptionWindow_Loaded(object sender, RoutedEventArgs e)
+        {
+            // Initialize checkbox states from registry/settings
+            try
+            {
+                ChkStartup.IsChecked = AppSettingsService.IsStartupEnabled();
+                ChkTerminal.IsChecked = AppSettingsService.GetTerminalSetting();
+            }
+            catch { }
+        }
+
+        private void ChkStartup_Changed(object sender, RoutedEventArgs e)
+        {
+            if (!IsLoaded) return;
+            bool enable = ChkStartup.IsChecked == true;
+            AppSettingsService.SetStartup(enable);
+        }
+
+        private void ChkTerminal_Changed(object sender, RoutedEventArgs e)
+        {
+            if (!IsLoaded) return;
+            bool show = ChkTerminal.IsChecked == true;
+            AppSettingsService.SetTerminalSetting(show);
         }
 
         public void PopulateDevices(List<AudioDeviceInfo> devices, int selectedId)
