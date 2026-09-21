@@ -1,0 +1,7 @@
+faster-whisper
+ctranslate2
+sounddevice
+numpy
+onnxruntime
+nvidia-cublas-cu12
+nvidia-cudnn-cu12
