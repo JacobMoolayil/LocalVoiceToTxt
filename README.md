@@ -1,5 +1,13 @@
 # LocalVoice 🎙️
 
+[![GitHub Release](https://img.shields.io/github/v/release/JacobMoolayil/LocalVoiceToTxt?color=blue&style=flat-square)](https://github.com/JacobMoolayil/LocalVoiceToTxt/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
+[![Platform: Windows](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6?style=flat-square&logo=windows)](https://microsoft.com/windows)
+[![CUDA: FP16](https://img.shields.io/badge/GPU-NVIDIA%20CUDA%20FP16-76B900?style=flat-square&logo=nvidia)](https://developer.nvidia.com/cuda-toolkit)
+[![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?style=flat-square&logo=dotnet)](https://dotnet.microsoft.com/)
+[![Python](https://img.shields.io/badge/Python-3.13-3776AB?style=flat-square&logo=python)](https://python.org)
+[![faster-whisper](https://img.shields.io/badge/AI-faster--whisper-orange?style=flat-square)](https://github.com/SYSTRAN/faster-whisper)
+
 A lightweight, completely offline, low-latency Windows voice-to-text dictation application powered by **faster-whisper (CTranslate2)** on your **NVIDIA RTX GPU** with **Silero VAD v5** and **automatic CPU fallback**.
 
 > **Press one global hotkey (`Ctrl + Shift + Space`) → speak naturally → text appears wherever your cursor is.**
