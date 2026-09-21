@@ -28,19 +28,38 @@ namespace LocalVoice.App.Services
         public void StartEngine()
         {
             var baseDir = AppDomain.CurrentDomain.BaseDirectory;
-            var enginePath = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "..", "..", "..", "engine", "engine_host.py"));
-            var pythonPath = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "..", "..", "..", "engine", "venv", "Scripts", "python.exe"));
+            string[] engineCandidates = new[]
+            {
+                Path.Combine(baseDir, "engine", "engine_host.py"),
+                Path.Combine(baseDir, "..", "engine", "engine_host.py"),
+                Path.Combine(baseDir, "..", "..", "engine", "engine_host.py"),
+                Path.Combine(baseDir, "..", "..", "..", "..", "..", "engine", "engine_host.py")
+            };
 
-            if (!File.Exists(pythonPath))
+            string[] pythonCandidates = new[]
             {
-                var altPy = Path.GetFullPath(Path.Combine(baseDir, "engine", "venv", "Scripts", "python.exe"));
-                if (File.Exists(altPy)) pythonPath = altPy;
-            }
-            if (!File.Exists(enginePath))
+                Path.Combine(baseDir, "engine", "venv", "Scripts", "python.exe"),
+                Path.Combine(baseDir, "..", "engine", "venv", "Scripts", "python.exe"),
+                Path.Combine(baseDir, "..", "..", "engine", "venv", "Scripts", "python.exe"),
+                Path.Combine(baseDir, "..", "..", "..", "..", "..", "engine", "venv", "Scripts", "python.exe")
+            };
+
+            string enginePath = "";
+            foreach (var c in engineCandidates)
             {
-                var altEng = Path.GetFullPath(Path.Combine(baseDir, "engine", "engine_host.py"));
-                if (File.Exists(altEng)) enginePath = altEng;
+                var full = Path.GetFullPath(c);
+                if (File.Exists(full)) { enginePath = full; break; }
             }
+
+            string pythonPath = "";
+            foreach (var c in pythonCandidates)
+            {
+                var full = Path.GetFullPath(c);
+                if (File.Exists(full)) { pythonPath = full; break; }
+            }
+
+            if (string.IsNullOrEmpty(pythonPath)) pythonPath = "python.exe";
+            if (string.IsNullOrEmpty(enginePath)) enginePath = "engine_host.py";
 
             AppSettingsService.Log($"[IPC] Launching Engine: {pythonPath}");
             AppSettingsService.Log($"[IPC] Script Path: {enginePath}");

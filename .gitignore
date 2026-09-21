@@ -41,6 +41,7 @@ huggingface/
 [Bb]in/
 [Oo]bj/
 [Oo]ut/
+publish/
 .vs/
 *.user
 *.userosscache
