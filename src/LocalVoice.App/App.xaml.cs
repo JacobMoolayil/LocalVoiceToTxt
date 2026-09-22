@@ -1,7 +1,9 @@
 using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Text;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Forms;
 using System.Windows.Interop;
 using LocalVoice.App.Services;
@@ -20,6 +22,11 @@ namespace LocalVoice.App
 
         private bool _isRecording = false;
 
+        private IntPtr _lastExternalHwnd = IntPtr.Zero;
+        private IntPtr _winEventHook = IntPtr.Zero;
+        private WinEventDelegate? _winEventDelegate;
+        private uint _currentProcessId;
+
         protected override void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
@@ -27,6 +34,27 @@ namespace LocalVoice.App
 
             try
             {
+                _currentProcessId = (uint)System.Diagnostics.Process.GetCurrentProcess().Id;
+                _winEventDelegate = WinEventProc;
+                _winEventHook = SetWinEventHook(
+                    EVENT_SYSTEM_FOREGROUND,
+                    EVENT_SYSTEM_FOREGROUND,
+                    IntPtr.Zero,
+                    _winEventDelegate,
+                    0,
+                    0,
+                    WINEVENT_OUTOFCONTEXT);
+
+                IntPtr initialFg = GetForegroundWindow();
+                if (initialFg != IntPtr.Zero)
+                {
+                    GetWindowThreadProcessId(initialFg, out uint fgPid);
+                    if (fgPid != _currentProcessId)
+                    {
+                        _lastExternalHwnd = initialFg;
+                    }
+                }
+
                 // Ensure Console.WriteLine never throws 'handle is invalid' in GUI mode
                 if (!AppSettingsService.GetTerminalSetting())
                 {
@@ -187,7 +215,77 @@ namespace LocalVoice.App
         [System.Runtime.InteropServices.DllImport("user32.dll")]
         private static extern bool SetForegroundWindow(IntPtr hWnd);
 
-        private IntPtr _targetHwnd = IntPtr.Zero;
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool BringWindowToTop(IntPtr hWnd);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+        [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+        private static extern uint GetCurrentThreadId();
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+
+        private delegate void WinEventDelegate(IntPtr hWinEventHook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint dwEventThread, uint dwmsEventTime);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+        private static extern IntPtr SetWinEventHook(uint eventMin, uint eventMax, IntPtr hmodWinEventProc, WinEventDelegate lpfnWinEventProc, uint idProcess, uint idThread, uint dwFlags);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+        private static extern bool UnhookWinEvent(IntPtr hWinEventHook);
+
+        private const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
+        private const uint WINEVENT_OUTOFCONTEXT = 0x0000;
+
+        private void WinEventProc(IntPtr hWinEventHook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint dwEventThread, uint dwmsEventTime)
+        {
+            if (hwnd == IntPtr.Zero) return;
+
+            GetWindowThreadProcessId(hwnd, out uint pid);
+            if (pid != 0 && pid != _currentProcessId)
+            {
+                _lastExternalHwnd = hwnd;
+                AppSettingsService.Log($"[Focus] External target window updated: {hwnd}");
+            }
+        }
+
+        private void RestoreFocusToWindow(IntPtr targetHwnd)
+        {
+            if (targetHwnd == IntPtr.Zero) return;
+
+            try
+            {
+                IntPtr currentFg = GetForegroundWindow();
+                if (currentFg == targetHwnd) return;
+
+                uint currentThreadId = GetCurrentThreadId();
+                uint targetThreadId = GetWindowThreadProcessId(targetHwnd, out _);
+
+                bool attached = false;
+                if (currentThreadId != targetThreadId && targetThreadId != 0)
+                {
+                    attached = AttachThreadInput(currentThreadId, targetThreadId, true);
+                }
+
+                try
+                {
+                    SetForegroundWindow(targetHwnd);
+                    BringWindowToTop(targetHwnd);
+                }
+                finally
+                {
+                    if (attached)
+                    {
+                        AttachThreadInput(currentThreadId, targetThreadId, false);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AppSettingsService.Log($"[Focus Error] {ex.Message}");
+            }
+        }
 
         private void ToggleRecording()
         {
@@ -203,8 +301,16 @@ namespace LocalVoice.App
 
         private void StartRecording()
         {
-            _targetHwnd = GetForegroundWindow();
-            AppSettingsService.Log($"[Focus] Target Window captured: {_targetHwnd}");
+            IntPtr fg = GetForegroundWindow();
+            if (fg != IntPtr.Zero)
+            {
+                GetWindowThreadProcessId(fg, out uint pid);
+                if (pid != _currentProcessId)
+                {
+                    _lastExternalHwnd = fg;
+                    AppSettingsService.Log($"[Focus] Initial external target window captured: {_lastExternalHwnd}");
+                }
+            }
 
             _isRecording = true;
             try { System.Media.SystemSounds.Asterisk.Play(); } catch { }
@@ -231,6 +337,120 @@ namespace LocalVoice.App
             _engine?.SendCommand("stop");
         }
 
+        [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Auto)]
+        private static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        private struct RECT { public int Left, Top, Right, Bottom; }
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        private struct GUITHREADINFO
+        {
+            public int cbSize;
+            public int flags;
+            public IntPtr hwndActive;
+            public IntPtr hwndFocus;
+            public IntPtr hwndCapture;
+            public IntPtr hwndMenuOwner;
+            public IntPtr hwndMoveSize;
+            public IntPtr hwndCaret;
+            public RECT rcCaret;
+        }
+
+        private const int GUI_CARETBLINKING = 0x00000001;
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool GetGUIThreadInfo(uint idThread, ref GUITHREADINFO lpgui);
+
+        private bool IsCaretOrEditableFocused(IntPtr fgHwnd)
+        {
+            if (fgHwnd == IntPtr.Zero) return false;
+
+            // 1. Process check: if foreground belongs to LocalVoice, no external injection
+            uint fgTid = GetWindowThreadProcessId(fgHwnd, out uint fgPid);
+            if (fgPid == 0 || fgPid == _currentProcessId) return false;
+
+            // 2. Class check: Desktop, Taskbar, and system shell surfaces never have carets
+            var sbClass = new StringBuilder(256);
+            GetClassName(fgHwnd, sbClass, 256);
+            string cls = sbClass.ToString();
+            if (cls == "Progman" || cls == "WorkerW" || cls == "Shell_TrayWnd" || 
+                cls == "Shell_SecondaryTrayWnd" || cls == "NotifyIconOverflowWindow")
+            {
+                return false;
+            }
+
+            // 3. Fast Win32 Caret check (GetGUIThreadInfo)
+            try
+            {
+                var gui = new GUITHREADINFO();
+                gui.cbSize = System.Runtime.InteropServices.Marshal.SizeOf(gui);
+                if (GetGUIThreadInfo(fgTid, ref gui))
+                {
+                    if (gui.hwndCaret != IntPtr.Zero) return true;
+                    if ((gui.flags & GUI_CARETBLINKING) != 0) return true;
+                    if (gui.rcCaret.Right > gui.rcCaret.Left && gui.rcCaret.Bottom > gui.rcCaret.Top) return true;
+
+                    // If focused sub-window is a standard Edit/RichEdit control
+                    if (gui.hwndFocus != IntPtr.Zero)
+                    {
+                        var sbFocusClass = new StringBuilder(128);
+                        GetClassName(gui.hwndFocus, sbFocusClass, 128);
+                        string fcls = sbFocusClass.ToString().ToLowerInvariant();
+                        if (fcls.Contains("edit")) return true;
+                    }
+                }
+            }
+            catch { }
+
+            // 4. UI Automation check (for modern browsers, Chrome, Electron, Slack, Discord, VS Code, WPF)
+            try
+            {
+                var focused = AutomationElement.FocusedElement;
+                if (focused != null)
+                {
+                    var ct = focused.Current.ControlType;
+                    if (ct == ControlType.Edit)
+                    {
+                        // Check if readonly
+                        if (focused.TryGetCurrentPattern(ValuePattern.Pattern, out var vpObj) && vpObj is ValuePattern vp)
+                        {
+                            if (vp.Current.IsReadOnly) return false;
+                        }
+                        return true;
+                    }
+
+                    if (ct == ControlType.Document)
+                    {
+                        // For document controls (e.g. Word, VS Code, Google Docs, rich editors)
+                        if (focused.TryGetCurrentPattern(ValuePattern.Pattern, out var vpObj) && vpObj is ValuePattern vp)
+                        {
+                            if (!vp.Current.IsReadOnly) return true;
+                        }
+
+                        // If class or name indicates an editable text area
+                        string uiaCls = focused.Current.ClassName ?? "";
+                        if (uiaCls.Contains("Edit") || uiaCls.Contains("TextBox") || uiaCls.Contains("RichEdit"))
+                        {
+                            return true;
+                        }
+                    }
+
+                    // Check if it's a combo box with editable text
+                    if (ct == ControlType.ComboBox)
+                    {
+                        if (focused.TryGetCurrentPattern(ValuePattern.Pattern, out var vpObj) && vpObj is ValuePattern vp)
+                        {
+                            if (!vp.Current.IsReadOnly) return true;
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            return false;
+        }
+
         private void HandleCommittedText(string text)
         {
             AppSettingsService.Log($"[App] HandleCommittedText received: '{text}'");
@@ -244,13 +464,30 @@ namespace LocalVoice.App
                     if (!_transcriptionWindow.IsVisible) _transcriptionWindow.Show();
                 }
                 
-                // Return focus to target application before pasting
-                if (_targetHwnd != IntPtr.Zero)
+                // Determine active target window
+                IntPtr currentFg = GetForegroundWindow();
+                if (currentFg == IntPtr.Zero)
                 {
-                    AppSettingsService.Log($"[Focus] Restoring focus to target window: {_targetHwnd}");
-                    SetForegroundWindow(_targetHwnd);
-                    System.Threading.Thread.Sleep(70);
+                    AppSettingsService.Log("[Focus] No foreground window active. Skipping text injection.");
+                    return;
                 }
+
+                GetWindowThreadProcessId(currentFg, out uint fgPid);
+                if (fgPid == _currentProcessId)
+                {
+                    AppSettingsService.Log("[Focus] Focus is on LocalVoice app. Skipping text injection.");
+                    return;
+                }
+
+                // Verify that the user has an active caret or editable text box focused
+                if (!IsCaretOrEditableFocused(currentFg))
+                {
+                    AppSettingsService.Log($"[Focus] No active caret or text box in foreground window ({currentFg}). Skipping text injection.");
+                    return;
+                }
+
+                AppSettingsService.Log($"[Focus] Active text insertion point confirmed in target: {currentFg}. Injecting text...");
+                _lastExternalHwnd = currentFg;
 
                 // Inject via Safe Clipboard (Ctrl+V)
                 _injector?.InjectText(text);
@@ -259,6 +496,12 @@ namespace LocalVoice.App
 
         protected override void OnExit(ExitEventArgs e)
         {
+            if (_winEventHook != IntPtr.Zero)
+            {
+                UnhookWinEvent(_winEventHook);
+                _winEventHook = IntPtr.Zero;
+            }
+
             _deviceWatcher?.Dispose();
             _hotkey?.Dispose();
             _engine?.Dispose();

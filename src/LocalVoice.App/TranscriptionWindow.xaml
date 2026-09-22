@@ -4,6 +4,7 @@
         Title="LocalVoice" Height="370" Width="490"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         Topmost="True" ShowInTaskbar="True" ResizeMode="NoResize"
+        ShowActivated="False"
         WindowStartupLocation="CenterScreen">
     
     <Border Background="#1E1E1E" CornerRadius="12" BorderBrush="#3F3F46" BorderThickness="1.5" Margin="10">
