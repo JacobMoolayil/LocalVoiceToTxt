@@ -5,19 +5,69 @@ using System.IO;
 using System.Text.Json;
 using System.Threading.Tasks;
 
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
+
 namespace LocalVoice.App.Services
 {
-    public class AudioDeviceInfo
+    public class AudioDeviceInfo : INotifyPropertyChanged
     {
-        public int Id { get; set; }
-        public string Name { get; set; } = "";
-        public bool IsDefault { get; set; }
+        private int _id;
+        private string _name = "";
+        private bool _isDefault;
+
+        public int Id
+        {
+            get => _id;
+            set
+            {
+                if (_id != value)
+                {
+                    _id = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public string Name
+        {
+            get => _name;
+            set
+            {
+                if (_name != value)
+                {
+                    _name = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public bool IsDefault
+        {
+            get => _isDefault;
+            set
+            {
+                if (_isDefault != value)
+                {
+                    _isDefault = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+
+        protected void OnPropertyChanged([CallerMemberName] string? propName = null)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propName));
+        }
     }
 
     public class EngineProcessService : IDisposable
     {
         private Process? _process;
         private StreamWriter? _stdin;
+        private readonly object _stdinLock = new();
 
         public event Action<string>? OnInterimText;
         public event Action<string>? OnCommittedText;
@@ -136,7 +186,7 @@ namespace LocalVoice.App.Services
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[IPC Parse Error] {ex.Message} | Line: {e.Data}");
+                AppSettingsService.Log($"[IPC Parse Error] {ex.Message} | Line: {e.Data}");
             }
         }
 
@@ -152,40 +202,46 @@ namespace LocalVoice.App.Services
 
         public void SendCommand(string command)
         {
-            if (_stdin != null && _process != null && !_process.HasExited)
+            lock (_stdinLock)
             {
-                try
+                if (_stdin != null && _process != null && !_process.HasExited)
                 {
-                    var cmdJson = JsonSerializer.Serialize(new { cmd = command });
-                    _stdin.WriteLine(cmdJson);
-                    _stdin.Flush();
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[IPC Send Error] {ex.Message}");
+                    try
+                    {
+                        var cmdJson = JsonSerializer.Serialize(new { cmd = command });
+                        _stdin.WriteLine(cmdJson);
+                        _stdin.Flush();
+                    }
+                    catch (Exception ex)
+                    {
+                        AppSettingsService.Log($"[IPC Send Error] {ex.Message}");
+                    }
                 }
             }
         }
 
         public void SendCommandWithPayload(string command, object payload)
         {
-            if (_stdin != null && _process != null && !_process.HasExited)
+            lock (_stdinLock)
             {
-                try
+                if (_stdin != null && _process != null && !_process.HasExited)
                 {
-                    var dict = new Dictionary<string, object>();
-                    dict["cmd"] = command;
-                    foreach (var prop in payload.GetType().GetProperties())
+                    try
                     {
-                        dict[prop.Name] = prop.GetValue(payload) ?? "";
+                        var dict = new Dictionary<string, object>();
+                        dict["cmd"] = command;
+                        foreach (var prop in payload.GetType().GetProperties())
+                        {
+                            dict[prop.Name] = prop.GetValue(payload) ?? "";
+                        }
+                        var cmdJson = JsonSerializer.Serialize(dict);
+                        _stdin.WriteLine(cmdJson);
+                        _stdin.Flush();
                     }
-                    var cmdJson = JsonSerializer.Serialize(dict);
-                    _stdin.WriteLine(cmdJson);
-                    _stdin.Flush();
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[IPC Send Error] {ex.Message}");
+                    catch (Exception ex)
+                    {
+                        AppSettingsService.Log($"[IPC Send Error] {ex.Message}");
+                    }
                 }
             }
         }

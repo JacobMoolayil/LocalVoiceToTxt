@@ -54,7 +54,7 @@ namespace LocalVoice.App.Services
                 keybd_event(VK_V, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
                 keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
 
-                Console.WriteLine($"[TextInjection] Injected successfully via Safe Clipboard (Ctrl+V): '{textToInject.Trim()}'");
+                AppSettingsService.Log($"[TextInjection] Injected successfully via Safe Clipboard (Ctrl+V): '{textToInject.Trim()}'");
 
                 // 4. Restore original clipboard content
                 if (hadText)
@@ -75,7 +75,7 @@ namespace LocalVoice.App.Services
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[TextInjection Error] {ex.Message}");
+                AppSettingsService.Log($"[TextInjection Error] {ex.Message}");
             }
         }
     }

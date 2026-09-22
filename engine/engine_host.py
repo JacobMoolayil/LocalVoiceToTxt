@@ -111,7 +111,7 @@ class EngineHost:
         self._emit("ready")
         
         # Emit available audio devices
-        devs, def_id = get_audio_devices()
+        devs, def_id = self.audio_capture.refresh_devices()
         self._emit("devices", {
             "devices": devs,
             "selected_id": self.audio_capture.selected_device_id
@@ -170,9 +170,16 @@ class EngineHost:
                     self.is_speaking = False
                     self.all_session_audio = []
                     self._emit("status", {"recording": False})
+
+                    # Always ensure devices are fresh on stop
+                    devs, def_id = self.audio_capture.refresh_devices()
+                    self._emit("devices", {
+                        "devices": devs,
+                        "selected_id": self.audio_capture.selected_device_id
+                    })
                     
                 elif action == "list_devices":
-                    devs, def_id = get_audio_devices()
+                    devs, def_id = self.audio_capture.refresh_devices()
                     self._emit("devices", {
                         "devices": devs,
                         "selected_id": self.audio_capture.selected_device_id

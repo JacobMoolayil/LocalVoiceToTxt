@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -14,14 +16,45 @@ namespace LocalVoice.App
     {
         public event Action? OnStopRequested;
         public event Action<int>? OnDeviceSelected;
+        public event Action? OnRefreshDevicesRequested;
 
+        private readonly ObservableCollection<AudioDeviceInfo> _deviceCollection = new();
         private bool _isPopulating = false;
 
         public TranscriptionWindow()
         {
             InitializeComponent();
+            MicComboBox.ItemsSource = _deviceCollection;
+            MicComboBox.DropDownOpened += MicComboBox_DropDownOpened;
             this.MouseLeftButtonDown += (s, e) => { this.DragMove(); };
             this.Loaded += TranscriptionWindow_Loaded;
+            this.IsVisibleChanged += TranscriptionWindow_IsVisibleChanged;
+        }
+
+        protected override void OnSourceInitialized(EventArgs e)
+        {
+            base.OnSourceInitialized(e);
+            try
+            {
+                var helper = new WindowInteropHelper(this);
+                var source = HwndSource.FromHwnd(helper.EnsureHandle());
+                source?.AddHook(WndProc);
+            }
+            catch (Exception ex)
+            {
+                AppSettingsService.Log($"[UI] Error adding WndProc hook: {ex.Message}");
+            }
+        }
+
+        private const int WM_DEVICECHANGE = 0x0219;
+        private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+        {
+            if (msg == WM_DEVICECHANGE)
+            {
+                AppSettingsService.Log("[UI] WM_DEVICECHANGE received. Requesting audio device refresh.");
+                OnRefreshDevicesRequested?.Invoke();
+            }
+            return IntPtr.Zero;
         }
 
         private void TranscriptionWindow_Loaded(object sender, RoutedEventArgs e)
@@ -33,6 +66,19 @@ namespace LocalVoice.App
                 ChkTerminal.IsChecked = AppSettingsService.GetTerminalSetting();
             }
             catch { }
+        }
+
+        private void TranscriptionWindow_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+        {
+            if (this.IsVisible)
+            {
+                OnRefreshDevicesRequested?.Invoke();
+            }
+        }
+
+        private void MicComboBox_DropDownOpened(object? sender, EventArgs e)
+        {
+            OnRefreshDevicesRequested?.Invoke();
         }
 
         private void ChkStartup_Changed(object sender, RoutedEventArgs e)
@@ -56,11 +102,62 @@ namespace LocalVoice.App
                 _isPopulating = true;
                 try
                 {
-                    MicComboBox.ItemsSource = devices;
-                    MicComboBox.SelectedValue = selectedId;
-                    if (MicComboBox.SelectedIndex == -1 && devices.Count > 0)
+                    // 1. Update existing or add new devices
+                    foreach (var newDev in devices)
+                    {
+                        var existing = _deviceCollection.FirstOrDefault(d => d.Id == newDev.Id);
+                        if (existing != null)
+                        {
+                            existing.Name = newDev.Name;
+                            existing.IsDefault = newDev.IsDefault;
+                        }
+                        else
+                        {
+                            _deviceCollection.Add(new AudioDeviceInfo
+                            {
+                                Id = newDev.Id,
+                                Name = newDev.Name,
+                                IsDefault = newDev.IsDefault
+                            });
+                        }
+                    }
+
+                    // 2. Remove devices no longer present
+                    for (int i = _deviceCollection.Count - 1; i >= 0; i--)
+                    {
+                        if (!devices.Any(d => d.Id == _deviceCollection[i].Id))
+                        {
+                            _deviceCollection.RemoveAt(i);
+                        }
+                    }
+
+                    // 3. Maintain or select appropriate device
+                    int targetId = selectedId;
+                    if (MicComboBox.SelectedValue is int currentSelection && _deviceCollection.Any(d => d.Id == currentSelection))
+                    {
+                        targetId = currentSelection;
+                    }
+
+                    // Force WPF to update the displayed text on the closed ComboBox header
+                    // by cycling SelectedValue through null while _isPopulating is true
+                    MicComboBox.SelectedValue = null;
+
+                    if (_deviceCollection.Any(d => d.Id == targetId))
+                    {
+                        MicComboBox.SelectedValue = targetId;
+                    }
+                    else if (_deviceCollection.Any(d => d.Id == -1))
+                    {
+                        MicComboBox.SelectedValue = -1;
+                    }
+                    else if (_deviceCollection.Count > 0)
                     {
                         MicComboBox.SelectedIndex = 0;
+                    }
+
+                    if (!MicComboBox.IsDropDownOpen)
+                    {
+                        try { MicComboBox.Items.Refresh(); } catch { }
                     }
                 }
                 finally
@@ -76,7 +173,7 @@ namespace LocalVoice.App
 
             if (MicComboBox.SelectedValue is int deviceId)
             {
-                Console.WriteLine($"[UI] Microphone changed by user to: ID {deviceId}");
+                AppSettingsService.Log($"[UI] Microphone changed by user to: ID {deviceId}");
                 OnDeviceSelected?.Invoke(deviceId);
             }
         }

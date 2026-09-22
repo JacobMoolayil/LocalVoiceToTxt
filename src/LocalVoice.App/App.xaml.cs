@@ -13,6 +13,7 @@ namespace LocalVoice.App
         private EngineProcessService? _engine;
         private GlobalHotkeyService? _hotkey;
         private TextInjectionService? _injector;
+        private AudioDeviceWatcher? _deviceWatcher;
         
         private TranscriptionWindow? _transcriptionWindow;
         private NotifyIcon? _trayIcon;
@@ -26,7 +27,18 @@ namespace LocalVoice.App
 
             try
             {
-                Console.WriteLine("Initializing LocalVoice UI...");
+                // Ensure Console.WriteLine never throws 'handle is invalid' in GUI mode
+                if (!AppSettingsService.GetTerminalSetting())
+                {
+                    try
+                    {
+                        Console.SetOut(System.IO.TextWriter.Null);
+                        Console.SetError(System.IO.TextWriter.Null);
+                    }
+                    catch { }
+                }
+
+                AppSettingsService.Log("Initializing LocalVoice UI...");
 
                 // 1. Initialize Main UI Window
                 _transcriptionWindow = new TranscriptionWindow();
@@ -35,12 +47,26 @@ namespace LocalVoice.App
                 // Ensure the Win32 handle is fully created
                 var helper = new WindowInteropHelper(_transcriptionWindow);
                 IntPtr hwnd = helper.EnsureHandle();
-                Console.WriteLine($"Main Window Handle: {hwnd}");
+                AppSettingsService.Log($"Main Window Handle: {hwnd}");
 
                 // 2. Initialize Services
                 _engine = new EngineProcessService();
                 _hotkey = new GlobalHotkeyService();
                 _injector = new TextInjectionService();
+                _deviceWatcher = new AudioDeviceWatcher();
+
+                // Wire up Win32 WM_DEVICECHANGE hardware notification hook directly
+                var hwndSource = HwndSource.FromHwnd(hwnd);
+                hwndSource?.AddHook((IntPtr h, int msg, IntPtr wParam, IntPtr lParam, ref bool handled) =>
+                {
+                    const int WM_DEVICECHANGE = 0x0219;
+                    if (msg == WM_DEVICECHANGE)
+                    {
+                        AppSettingsService.Log("[App] WM_DEVICECHANGE received via Win32 hook.");
+                        _deviceWatcher?.NotifyDeviceChanged();
+                    }
+                    return IntPtr.Zero;
+                });
 
                 // Wire up IPC events from Python
                 _engine.OnInterimText += (text) => _transcriptionWindow.SetInterimText(text);
@@ -50,6 +76,14 @@ namespace LocalVoice.App
                 _engine.OnDeviceListReceived += (devs, selId) => _transcriptionWindow.PopulateDevices(devs, selId);
 
                 _transcriptionWindow.OnDeviceSelected += (id) => _engine.SetDevice(id);
+                _transcriptionWindow.OnRefreshDevicesRequested += () => _engine.RequestDeviceList();
+
+                // Wire up audio device watcher (CoreAudio endpoint & default device changes)
+                _deviceWatcher.AudioDevicesChanged += () =>
+                {
+                    AppSettingsService.Log("[App] Refreshing audio devices after system device notification.");
+                    _engine.RequestDeviceList();
+                };
 
                 // Start Python AI Engine
                 _engine.StartEngine();
@@ -73,8 +107,8 @@ namespace LocalVoice.App
             }
             catch (Exception ex)
             {
-                Console.WriteLine("FATAL ERROR: " + ex.ToString());
-                System.IO.File.WriteAllText("crash.log", ex.ToString());
+                AppSettingsService.Log("FATAL ERROR: " + ex.ToString());
+                try { System.IO.File.WriteAllText("crash.log", ex.ToString()); } catch { }
                 System.Windows.MessageBox.Show("Fatal Error: " + ex.Message);
                 Shutdown();
             }
@@ -170,7 +204,7 @@ namespace LocalVoice.App
         private void StartRecording()
         {
             _targetHwnd = GetForegroundWindow();
-            Console.WriteLine($"[Focus] Target Window captured: {_targetHwnd}");
+            AppSettingsService.Log($"[Focus] Target Window captured: {_targetHwnd}");
 
             _isRecording = true;
             try { System.Media.SystemSounds.Asterisk.Play(); } catch { }
@@ -199,7 +233,7 @@ namespace LocalVoice.App
 
         private void HandleCommittedText(string text)
         {
-            Console.WriteLine($"[App] HandleCommittedText received: '{text}'");
+            AppSettingsService.Log($"[App] HandleCommittedText received: '{text}'");
             if (string.IsNullOrWhiteSpace(text)) return;
 
             Dispatcher.Invoke(() =>
@@ -213,7 +247,7 @@ namespace LocalVoice.App
                 // Return focus to target application before pasting
                 if (_targetHwnd != IntPtr.Zero)
                 {
-                    Console.WriteLine($"[Focus] Restoring focus to target window: {_targetHwnd}");
+                    AppSettingsService.Log($"[Focus] Restoring focus to target window: {_targetHwnd}");
                     SetForegroundWindow(_targetHwnd);
                     System.Threading.Thread.Sleep(70);
                 }
@@ -225,6 +259,7 @@ namespace LocalVoice.App
 
         protected override void OnExit(ExitEventArgs e)
         {
+            _deviceWatcher?.Dispose();
             _hotkey?.Dispose();
             _engine?.Dispose();
             

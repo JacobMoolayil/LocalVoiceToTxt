@@ -36,7 +36,7 @@ namespace LocalVoice.App.Services
             }
             else
             {
-                Console.WriteLine("ERROR: HwndSource.FromHwnd returned null!");
+                AppSettingsService.Log("ERROR: HwndSource.FromHwnd returned null!");
             }
 
             // Register Ctrl + Shift + Space
@@ -44,11 +44,11 @@ namespace LocalVoice.App.Services
             if (!success)
             {
                 int err = Marshal.GetLastWin32Error();
-                Console.WriteLine($"RegisterHotKey failed with error code: {err}");
+                AppSettingsService.Log($"RegisterHotKey failed with error code: {err}");
             }
             else
             {
-                Console.WriteLine("Global hotkey Ctrl+Shift+Space registered successfully!");
+                AppSettingsService.Log("Global hotkey Ctrl+Shift+Space registered successfully!");
             }
 
             return success;
@@ -59,7 +59,7 @@ namespace LocalVoice.App.Services
             const int WM_HOTKEY = 0x0312;
             if (msg == WM_HOTKEY && wParam.ToInt32() == HOTKEY_ID)
             {
-                Console.WriteLine("HOTKEY PRESSED: Ctrl+Shift+Space triggered!");
+                AppSettingsService.Log("HOTKEY PRESSED: Ctrl+Shift+Space triggered!");
                 OnHotKeyPressed?.Invoke();
                 handled = true;
             }
