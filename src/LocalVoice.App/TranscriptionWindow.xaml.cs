@@ -27,12 +27,15 @@ namespace LocalVoice.App
         private bool _isPopulating = false;
         private bool _isListening = false;
         private bool _isLoading = true;
+        private DateTime _settingsPopupLastClosed = DateTime.MinValue;
 
         public TranscriptionWindow()
         {
             InitializeComponent();
             MicComboBox.ItemsSource = _deviceCollection;
             MicComboBox.DropDownOpened += MicComboBox_DropDownOpened;
+            SettingsPopup.Opened += SettingsPopup_Opened;
+            SettingsPopup.Closed += (s, e) => _settingsPopupLastClosed = DateTime.Now;
             this.MouseLeftButtonDown += (s, e) => { this.DragMove(); };
             this.Loaded += TranscriptionWindow_Loaded;
             this.IsVisibleChanged += TranscriptionWindow_IsVisibleChanged;
@@ -86,6 +89,39 @@ namespace LocalVoice.App
         private void MicComboBox_DropDownOpened(object? sender, EventArgs e)
         {
             OnRefreshDevicesRequested?.Invoke();
+        }
+
+        private void BtnSettings_Click(object sender, RoutedEventArgs e)
+        {
+            // If the popup is currently open, close it and exit
+            if (SettingsPopup.IsOpen)
+            {
+                SettingsPopup.IsOpen = false;
+                return;
+            }
+
+            // Prevent immediately reopening if the popup was just closed by clicking this button or elsewhere
+            if ((DateTime.Now - _settingsPopupLastClosed).TotalMilliseconds < 300)
+                return;
+
+            SettingsPopup.IsOpen = true;
+        }
+
+        private void SettingsPopup_Opened(object? sender, EventArgs e)
+        {
+            OnRefreshDevicesRequested?.Invoke();
+        }
+
+        private void UpdateCurrentMicLabel()
+        {
+            if (MicComboBox.SelectedItem is AudioDeviceInfo device)
+            {
+                CurrentMicText.Text = device.Name;
+            }
+            else
+            {
+                CurrentMicText.Text = "No device";
+            }
         }
 
         private void ChkStartup_Changed(object sender, RoutedEventArgs e)
@@ -165,6 +201,9 @@ namespace LocalVoice.App
                     {
                         try { MicComboBox.Items.Refresh(); } catch { }
                     }
+
+                    // Sync the current mic name to the main window label
+                    UpdateCurrentMicLabel();
                 }
                 finally
                 {
@@ -182,6 +221,9 @@ namespace LocalVoice.App
                 AppSettingsService.Log($"[UI] Microphone changed by user to: ID {deviceId}");
                 OnDeviceSelected?.Invoke(deviceId);
             }
+
+            // Sync the current mic name to the main window label
+            UpdateCurrentMicLabel();
         }
 
         private void BtnToggleListening_Click(object sender, RoutedEventArgs e)
@@ -211,7 +253,7 @@ namespace LocalVoice.App
                     StatusText.Text = message;
                     StatusText.Foreground = HexBrush("#F59E0B");
 
-                    if (string.IsNullOrWhiteSpace(CommittedTextBlock.Text) && string.IsNullOrWhiteSpace(InterimTextBlock.Text))
+                    if (string.IsNullOrWhiteSpace(CommittedTextBox.Text) && string.IsNullOrWhiteSpace(InterimTextBlock.Text))
                     {
                         EmptyHintTextBlock.Text = $"{message} Please wait a moment.";
                         EmptyHintTextBlock.Foreground = HexBrush("#D97706");
@@ -247,7 +289,7 @@ namespace LocalVoice.App
                     StatusText.Text = "Listening...";
                     StatusText.Foreground = HexBrush("#F3F4F6");
 
-                    if (string.IsNullOrWhiteSpace(CommittedTextBlock.Text) && string.IsNullOrWhiteSpace(InterimTextBlock.Text))
+                    if (string.IsNullOrWhiteSpace(CommittedTextBox.Text) && string.IsNullOrWhiteSpace(InterimTextBlock.Text))
                     {
                         EmptyHintTextBlock.Text = "Listening... Speak now and text will appear here.";
                         EmptyHintTextBlock.Foreground = HexBrush("#6EE7B7");
@@ -268,7 +310,7 @@ namespace LocalVoice.App
                     StatusText.Text = "OFF (Not Listening)";
                     StatusText.Foreground = HexBrush("#9CA3AF");
 
-                    if (string.IsNullOrWhiteSpace(CommittedTextBlock.Text) && string.IsNullOrWhiteSpace(InterimTextBlock.Text))
+                    if (string.IsNullOrWhiteSpace(CommittedTextBox.Text) && string.IsNullOrWhiteSpace(InterimTextBlock.Text))
                     {
                         EmptyHintTextBlock.Text = "Dictation is OFF. Press Ctrl+Shift+Space or click ON to start.";
                         EmptyHintTextBlock.Foreground = HexBrush("#6B7280");
@@ -318,9 +360,13 @@ namespace LocalVoice.App
         {
             Dispatcher.Invoke(() =>
             {
-                CommittedTextBlock.Text += text + " ";
+                CommittedTextBox.Text += text + " ";
                 InterimTextBlock.Text = "";
                 EmptyHintTextBlock.Visibility = Visibility.Collapsed;
+                if (CommittedTextBox.SelectionLength == 0)
+                {
+                    TranscriptionScrollViewer.ScrollToEnd();
+                }
             });
         }
 
@@ -332,8 +378,12 @@ namespace LocalVoice.App
                 if (!string.IsNullOrEmpty(text))
                 {
                     EmptyHintTextBlock.Visibility = Visibility.Collapsed;
+                    if (CommittedTextBox.SelectionLength == 0)
+                    {
+                        TranscriptionScrollViewer.ScrollToEnd();
+                    }
                 }
-                else if (string.IsNullOrWhiteSpace(CommittedTextBlock.Text))
+                else if (string.IsNullOrWhiteSpace(CommittedTextBox.Text))
                 {
                     EmptyHintTextBlock.Visibility = Visibility.Visible;
                 }
@@ -342,8 +392,9 @@ namespace LocalVoice.App
 
         private void BtnClear_Click(object sender, RoutedEventArgs e)
         {
-            CommittedTextBlock.Text = "";
+            CommittedTextBox.Text = "";
             InterimTextBlock.Text = "";
+            BtnCopy.Content = "Copy All";
             EmptyHintTextBlock.Visibility = Visibility.Visible;
             if (_isLoading)
             {
@@ -366,12 +417,43 @@ namespace LocalVoice.App
         {
             try
             {
-                if (!string.IsNullOrWhiteSpace(CommittedTextBlock.Text))
+                if (!string.IsNullOrEmpty(CommittedTextBox.SelectedText))
                 {
-                    System.Windows.Clipboard.SetText(CommittedTextBlock.Text.Trim());
+                    System.Windows.Clipboard.SetText(CommittedTextBox.SelectedText);
+                }
+                else if (!string.IsNullOrWhiteSpace(CommittedTextBox.Text))
+                {
+                    System.Windows.Clipboard.SetText(CommittedTextBox.Text.Trim());
                 }
             }
             catch { }
+        }
+
+        private void CommittedTextBox_SelectionChanged(object sender, RoutedEventArgs e)
+        {
+            if (BtnCopy == null) return;
+            if (!string.IsNullOrEmpty(CommittedTextBox.SelectedText))
+            {
+                BtnCopy.Content = "Copy";
+            }
+            else
+            {
+                BtnCopy.Content = "Copy All";
+            }
+        }
+
+        private void CommittedTextBox_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            if (!e.Handled && TranscriptionScrollViewer != null)
+            {
+                e.Handled = true;
+                var eventArg = new MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta)
+                {
+                    RoutedEvent = UIElement.MouseWheelEvent,
+                    Source = sender
+                };
+                TranscriptionScrollViewer.RaiseEvent(eventArg);
+            }
         }
 
         private void BtnStop_Click(object sender, RoutedEventArgs e)

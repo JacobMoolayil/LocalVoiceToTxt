@@ -17,7 +17,6 @@
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
             
             <!-- Header -->
@@ -73,9 +72,51 @@
             <!-- Transcription Content Area -->
             <Border Grid.Row="1" Background="#141414" CornerRadius="8" BorderBrush="#27272A" BorderThickness="1" Padding="12">
                 <Grid>
-                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <ScrollViewer x:Name="TranscriptionScrollViewer" VerticalScrollBarVisibility="Auto">
                         <StackPanel>
-                            <TextBlock x:Name="CommittedTextBlock" TextWrapping="Wrap" Foreground="#F9FAFB" FontSize="15" LineHeight="22" Margin="0,0,0,4" />
+                            <TextBox x:Name="CommittedTextBox"
+                                     IsReadOnly="True"
+                                     TextWrapping="Wrap"
+                                     AcceptsReturn="True"
+                                     Background="Transparent"
+                                     Foreground="#F9FAFB"
+                                     BorderThickness="0"
+                                     FontSize="15"
+                                     Padding="0"
+                                     Margin="0,0,0,4"
+                                     Cursor="IBeam"
+                                     IsReadOnlyCaretVisible="False"
+                                     IsInactiveSelectionHighlightEnabled="True"
+                                     SelectionBrush="#2563EB"
+                                     SelectionOpacity="0.5"
+                                     FocusVisualStyle="{x:Null}"
+                                     SelectionChanged="CommittedTextBox_SelectionChanged"
+                                     PreviewMouseWheel="CommittedTextBox_PreviewMouseWheel">
+                                <TextBox.Template>
+                                    <ControlTemplate TargetType="TextBox">
+                                        <Border Background="{TemplateBinding Background}"
+                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                BorderThickness="{TemplateBinding BorderThickness}">
+                                            <ScrollViewer x:Name="PART_ContentHost" Focusable="False"
+                                                          HorizontalScrollBarVisibility="Hidden"
+                                                          VerticalScrollBarVisibility="Hidden"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </TextBox.Template>
+                                <TextBox.ContextMenu>
+                                    <ContextMenu Background="#1E1E1E" BorderBrush="#3F3F46" BorderThickness="1">
+                                        <ContextMenu.Resources>
+                                            <Style TargetType="MenuItem">
+                                                <Setter Property="Foreground" Value="#F9FAFB"/>
+                                                <Setter Property="FontSize" Value="12"/>
+                                                <Setter Property="Padding" Value="8,4"/>
+                                            </Style>
+                                        </ContextMenu.Resources>
+                                        <MenuItem Command="ApplicationCommands.Copy" Header="Copy" />
+                                        <MenuItem Command="ApplicationCommands.SelectAll" Header="Select All" />
+                                    </ContextMenu>
+                                </TextBox.ContextMenu>
+                            </TextBox>
                             <TextBlock x:Name="InterimTextBlock" TextWrapping="Wrap" Foreground="#9CA3AF" FontStyle="Italic" FontSize="15" LineHeight="22" />
                         </StackPanel>
                     </ScrollViewer>
@@ -86,26 +127,29 @@
                 </Grid>
             </Border>
 
-            <!-- Microphone Device Selector -->
-            <DockPanel Grid.Row="2" Margin="0,8,0,0">
+            <!-- Current Microphone Device Label -->
+            <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,8,0,0">
                 <TextBlock Text="🎙 Mic:" Foreground="#9CA3AF" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                <ComboBox x:Name="MicComboBox" Background="#27272A" Foreground="#111827" FontSize="11" Height="24"
-                          SelectionChanged="MicComboBox_SelectionChanged" DisplayMemberPath="Name" SelectedValuePath="Id"/>
-            </DockPanel>
+                <TextBlock x:Name="CurrentMicText" Text="No device" Foreground="#D1D5DB" FontSize="11" VerticalAlignment="Center"/>
+            </StackPanel>
 
-            <!-- Settings Options: Windows Startup & Show Terminal -->
-            <DockPanel Grid.Row="3" Margin="0,8,0,0">
-                <CheckBox x:Name="ChkStartup" Content="Start with Windows" Foreground="#D1D5DB" FontSize="11" 
-                          VerticalContentAlignment="Center" Cursor="Hand" Margin="0,0,16,0"
-                          Checked="ChkStartup_Changed" Unchecked="ChkStartup_Changed"/>
-                <CheckBox x:Name="ChkTerminal" Content="Show Terminal" Foreground="#D1D5DB" FontSize="11" 
-                          VerticalContentAlignment="Center" Cursor="Hand"
-                          Checked="ChkTerminal_Changed" Unchecked="ChkTerminal_Changed"/>
-            </DockPanel>
-            
             <!-- Footer Controls -->
-            <DockPanel Grid.Row="4" Margin="0,10,0,0" LastChildFill="False">
-                <TextBlock DockPanel.Dock="Left" Text="HotKey: Ctrl+Shift+Space" Foreground="#6B7280" FontSize="11" VerticalAlignment="Center"/>
+            <DockPanel Grid.Row="3" Margin="0,10,0,0" LastChildFill="False">
+                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button x:Name="BtnSettings" Width="84" Height="28" Margin="0,0,12,0"
+                            Background="#27272A" Foreground="#E4E4E7" BorderThickness="0" Cursor="Hand" Click="BtnSettings_Click">
+                        <Button.Resources>
+                            <Style TargetType="Border">
+                                <Setter Property="CornerRadius" Value="6"/>
+                            </Style>
+                        </Button.Resources>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="⚙" FontSize="12" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="Settings" FontSize="11" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                    <TextBlock Text="HotKey: Ctrl+Shift+Space" Foreground="#6B7280" FontSize="11" VerticalAlignment="Center"/>
+                </StackPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                     <Button x:Name="BtnClear" Content="Clear" Width="64" Height="28" Margin="0,0,8,0" Background="#27272A" Foreground="#E4E4E7" BorderThickness="0" Cursor="Hand" Click="BtnClear_Click">
                         <Button.Resources>
@@ -130,6 +174,34 @@
                     </Button>
                 </StackPanel>
             </DockPanel>
+
+            <!-- Settings Flyout Popup -->
+            <Popup x:Name="SettingsPopup" Placement="Top" PlacementTarget="{Binding ElementName=BtnSettings}"
+                   StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
+                <Border Background="#1E1E1E" CornerRadius="8" BorderBrush="#3F3F46" BorderThickness="1.5" Padding="14" Margin="8">
+                    <Border.Effect>
+                        <DropShadowEffect Color="#000000" BlurRadius="15" Opacity="0.5" ShadowDepth="3"/>
+                    </Border.Effect>
+                    <StackPanel Width="260">
+                        <!-- Microphone Selector -->
+                        <TextBlock Text="MICROPHONE" Foreground="#6B7280" FontSize="10" FontWeight="Bold" Margin="0,0,0,6"/>
+                        <ComboBox x:Name="MicComboBox" Background="#27272A" Foreground="#111827" FontSize="11" Height="26"
+                                  SelectionChanged="MicComboBox_SelectionChanged" DisplayMemberPath="Name" SelectedValuePath="Id"/>
+
+                        <!-- Separator -->
+                        <Border Height="1" Background="#3F3F46" Margin="0,12,0,12"/>
+
+                        <!-- Settings Checkboxes -->
+                        <TextBlock Text="OPTIONS" Foreground="#6B7280" FontSize="10" FontWeight="Bold" Margin="0,0,0,8"/>
+                        <CheckBox x:Name="ChkStartup" Content="Start with Windows" Foreground="#D1D5DB" FontSize="11" 
+                                  VerticalContentAlignment="Center" Cursor="Hand" Margin="0,0,0,8"
+                                  Checked="ChkStartup_Changed" Unchecked="ChkStartup_Changed"/>
+                        <CheckBox x:Name="ChkTerminal" Content="Show Terminal" Foreground="#D1D5DB" FontSize="11" 
+                                  VerticalContentAlignment="Center" Cursor="Hand"
+                                  Checked="ChkTerminal_Changed" Unchecked="ChkTerminal_Changed"/>
+                    </StackPanel>
+                </Border>
+            </Popup>
         </Grid>
     </Border>
 </Window>
