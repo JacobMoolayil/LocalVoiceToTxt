@@ -26,14 +26,14 @@ jobs:
       run: dotnet publish src\LocalVoice.App\LocalVoice.App.csproj -c Release -o publish\LocalVoice
 
     - name: Package Release Archive
-      run: powershell -ExecutionPolicy Bypass -File .\package_release.ps1
+      run: powershell -ExecutionPolicy Bypass -File .\package_release.ps1 -Version "${{ github.ref_name }}"
 
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2
       with:
         files: dist/*.zip
-        tag_name: ${{ github.ref_name != 'master' && github.ref_name || 'v1.0.0' }}
-        name: LocalVoice ${{ github.ref_name != 'master' && github.ref_name || 'v1.0.0' }} - Offline GPU Voice to Text
+        tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'v1.1.0' }}
+        name: LocalVoice ${{ github.ref_type == 'tag' && github.ref_name || 'v1.1.0' }} - Offline GPU Voice to Text
         generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

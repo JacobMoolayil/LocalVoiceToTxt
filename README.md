@@ -60,7 +60,7 @@ LocalVoice is optimized for **NVIDIA RTX GPUs** using CUDA FP16, with an **autom
 ## 📦 Download & Quick Start
 
 1. Go to the [Releases](https://github.com/JacobMoolayil/LocalVoiceToTxt/releases) page on GitHub.
-2. Download **`LocalVoice-v1.0.0.zip`** and extract it anywhere on your PC.
+2. Download the latest release archive (e.g. **`LocalVoice-v1.1.0.zip`**) and extract it anywhere on your PC.
 3. Open the folder:
    * **First time only**: Double-click `engine\setup_environment.bat` to install local AI dependencies.
    * **To run**: Double-click `LocalVoice.App.exe`!
