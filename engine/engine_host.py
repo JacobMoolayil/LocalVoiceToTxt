@@ -12,10 +12,12 @@ from transcriber import Transcriber
 
 class EngineHost:
     def __init__(self):
+        self._emit("loading", {"message": "Initializing audio capture and VAD..."})
         self.config = AppConfig()
         self.audio_capture = AudioCapture(self.config.sample_rate, self.config.chunk_size)
         
         self.vad = SileroVAD(self.config.vad_threshold, self.config.sample_rate)
+        self._emit("loading", {"message": "Loading Whisper AI model..."})
         self.transcriber = Transcriber(self.config)
         
         self.is_running = True
@@ -106,9 +108,31 @@ class EngineHost:
                 traceback.print_exc(file=sys.stderr)
                 time.sleep(0.05)
 
+    def _get_model_info_payload(self):
+        actual_dev = getattr(self.transcriber, "actual_device", self.config.device)
+        actual_comp = getattr(self.transcriber, "actual_compute_type", self.config.compute_type)
+        hw_name = getattr(self.transcriber, "hardware_name", "RTX 3050")
+        comp_str = "FP16" if "16" in actual_comp else actual_comp.upper()
+        if actual_dev == "cuda":
+            hw_label = f"GPU: {hw_name} (CUDA {comp_str})"
+        else:
+            hw_label = f"CPU ({comp_str})" if hw_name == "CPU" else f"CPU: {hw_name} ({comp_str})"
+
+        model_name = getattr(self.transcriber, "model_name", self.config.model_size)
+        return {
+            "model": model_name,
+            "device": actual_dev,
+            "compute_type": actual_comp,
+            "hardware_name": hw_name,
+            "hardware_label": hw_label,
+            "label": f"{model_name} | {hw_label}"
+        }
+
     def start(self):
         self.worker_thread.start()
-        self._emit("ready")
+        model_info = self._get_model_info_payload()
+        self._emit("ready", model_info)
+        self._emit("model_info", model_info)
         
         # Emit available audio devices
         devs, def_id = self.audio_capture.refresh_devices()
@@ -118,7 +142,7 @@ class EngineHost:
         })
         
         print("\n=======================================================", file=sys.stderr)
-        print(" LocalVoice Engine is READY! (RTX 3050 CUDA FP16)", file=sys.stderr)
+        print(f" LocalVoice Engine is READY! (Whisper: {model_info['label']})", file=sys.stderr)
         print(" Default Microphone: Windows Default", file=sys.stderr)
         print(" Press Ctrl+Shift+Space to Dictate", file=sys.stderr)
         print("=======================================================\n", file=sys.stderr)
@@ -189,6 +213,9 @@ class EngineHost:
                     dev_id = cmd.get("device_id", -1)
                     self.audio_capture.set_device(dev_id)
                     self._emit("device_changed", {"device_id": dev_id})
+
+                elif action == "get_model_info":
+                    self._emit("model_info", self._get_model_info_payload())
                     
                 elif action == "exit":
                     self.is_running = False

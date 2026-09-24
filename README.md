@@ -81,11 +81,12 @@ LocalVoice is optimized for **NVIDIA RTX GPUs** using CUDA FP16, with an **autom
 
 | Action | Control |
 | :--- | :--- |
-| **Start / Stop Dictating** | `Ctrl + Shift + Space` |
+| **Start / Stop Dictating** | Click the **ON / OFF** button or press `Ctrl + Shift + Space` |
+| **Whisper Model & Hardware** | View the live active model badge in the top right (e.g. `Whisper: small (CUDA FP16)`) |
 | **Switch Microphone** | Select from `🎙 Mic:` dropdown in the app window |
 | **Toggle Console Logs** | Check / Uncheck `Show Terminal` |
 | **Launch on Boot** | Check / Uncheck `Start with Windows` |
-| **Show / Hide Window** | Right-click the blue microphone icon in the System Tray |
+| **Show / Hide Window** | Click `Hide` button or right-click the microphone icon in the System Tray |
 
 ---
 

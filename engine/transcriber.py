@@ -49,6 +49,7 @@ VOCABULARY_MAP = [
 class Transcriber:
     def __init__(self, config: AppConfig):
         self.config = config
+        self.model_name = config.model_size
         try:
             print(f"Loading Whisper model '{config.model_size}' on {config.device} ({config.compute_type})...", file=sys.stderr)
             self.model = WhisperModel(
@@ -58,6 +59,9 @@ class Transcriber:
                 local_files_only=False
             )
             print("Whisper model loaded on GPU (CUDA FP16).", file=sys.stderr)
+            self.actual_device = config.device
+            self.actual_compute_type = config.compute_type
+            self.hardware_name = self._detect_gpu_name()
         except Exception as e:
             print(f"[Warning] GPU acceleration unavailable ({e}). Falling back to CPU mode (int8)...", file=sys.stderr)
             self.model = WhisperModel(
@@ -67,6 +71,33 @@ class Transcriber:
                 local_files_only=False
             )
             print("Whisper model loaded on CPU (int8 mode).", file=sys.stderr)
+            self.actual_device = "cpu"
+            self.actual_compute_type = "int8"
+            self.hardware_name = self._detect_cpu_name()
+
+    def _detect_gpu_name(self) -> str:
+        try:
+            import subprocess
+            out = subprocess.check_output(
+                ['nvidia-smi', '--query-gpu=name', '--format=csv,noheader'],
+                text=True, stderr=subprocess.DEVNULL
+            ).strip()
+            if out:
+                name = out.replace("NVIDIA GeForce ", "").replace("NVIDIA ", "").strip()
+                return name.replace(" Laptop GPU", "")
+        except Exception:
+            pass
+        return "RTX 3050"
+
+    def _detect_cpu_name(self) -> str:
+        try:
+            import platform
+            proc = platform.processor()
+            if proc:
+                return "CPU"
+        except Exception:
+            pass
+        return "CPU"
 
     def _post_process(self, text: str) -> str:
         if not text:

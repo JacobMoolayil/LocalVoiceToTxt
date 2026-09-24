@@ -74,6 +74,9 @@ namespace LocalVoice.App.Services
         public event Action? OnVadStart;
         public event Action? OnVadEnd;
         public event Action<List<AudioDeviceInfo>, int>? OnDeviceListReceived;
+        public event Action<string, string>? OnModelInfoReceived;
+        public event Action? OnEngineReady;
+        public event Action<string>? OnEngineLoading;
 
         public void StartEngine()
         {
@@ -182,6 +185,40 @@ namespace LocalVoice.App.Services
                         }
                         OnDeviceListReceived?.Invoke(list, selectedId);
                     }
+                    else if (eventType == "loading")
+                    {
+                        string msg = "Loading AI Engine...";
+                        if (doc.RootElement.TryGetProperty("message", out var msgElem))
+                        {
+                            msg = msgElem.GetString() ?? msg;
+                        }
+                        AppSettingsService.Log($"[Engine Loading] {msg}");
+                        OnEngineLoading?.Invoke(msg);
+                    }
+                    else if (eventType == "ready" || eventType == "model_info")
+                    {
+                        if (eventType == "ready")
+                        {
+                            OnEngineReady?.Invoke();
+                        }
+
+                        string model = "small";
+                        string hardwareLabel = "GPU: RTX 3050 (CUDA FP16)";
+                        if (doc.RootElement.TryGetProperty("model", out var mElem))
+                        {
+                            model = mElem.GetString() ?? "small";
+                        }
+                        if (doc.RootElement.TryGetProperty("hardware_label", out var hElem))
+                        {
+                            hardwareLabel = hElem.GetString() ?? "GPU: RTX 3050 (CUDA FP16)";
+                        }
+                        else if (doc.RootElement.TryGetProperty("label", out var lElem))
+                        {
+                            hardwareLabel = lElem.GetString() ?? "GPU: RTX 3050 (CUDA FP16)";
+                        }
+                        AppSettingsService.Log($"[Engine] Model & Hardware info received: Model={model}, Hardware={hardwareLabel}");
+                        OnModelInfoReceived?.Invoke(model, hardwareLabel);
+                    }
                 }
             }
             catch (Exception ex)
@@ -198,6 +235,11 @@ namespace LocalVoice.App.Services
         public void RequestDeviceList()
         {
             SendCommand("list_devices");
+        }
+
+        public void RequestModelInfo()
+        {
+            SendCommand("get_model_info");
         }
 
         public void SendCommand(string command)

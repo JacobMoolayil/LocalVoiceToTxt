@@ -21,6 +21,7 @@ namespace LocalVoice.App
         private NotifyIcon? _trayIcon;
 
         private bool _isRecording = false;
+        private bool _isEngineReady = false;
 
         private IntPtr _lastExternalHwnd = IntPtr.Zero;
         private IntPtr _winEventHook = IntPtr.Zero;
@@ -70,7 +71,6 @@ namespace LocalVoice.App
 
                 // 1. Initialize Main UI Window
                 _transcriptionWindow = new TranscriptionWindow();
-                _transcriptionWindow.OnStopRequested += StopRecording;
 
                 // Ensure the Win32 handle is fully created
                 var helper = new WindowInteropHelper(_transcriptionWindow);
@@ -99,10 +99,29 @@ namespace LocalVoice.App
                 // Wire up IPC events from Python
                 _engine.OnInterimText += (text) => _transcriptionWindow.SetInterimText(text);
                 _engine.OnCommittedText += HandleCommittedText;
-                _engine.OnVadStart += () => _transcriptionWindow.SetStatus(true);
-                _engine.OnVadEnd += () => _transcriptionWindow.SetStatus(false);
+                _engine.OnVadStart += () => _transcriptionWindow?.SetSpeechDetected(true);
+                _engine.OnVadEnd += () => _transcriptionWindow?.SetSpeechDetected(false);
                 _engine.OnDeviceListReceived += (devs, selId) => _transcriptionWindow.PopulateDevices(devs, selId);
+                _engine.OnModelInfoReceived += (model, label) => _transcriptionWindow?.SetModelInfo(model, label);
 
+                _engine.OnEngineLoading += (msg) =>
+                {
+                    _transcriptionWindow?.SetLoadingState(true, msg);
+                    if (_trayIcon != null) _trayIcon.Text = "LocalVoice - Loading AI Model...";
+                };
+
+                _engine.OnEngineReady += () =>
+                {
+                    _isEngineReady = true;
+                    _transcriptionWindow?.SetLoadingState(false);
+                    if (_trayIcon != null)
+                    {
+                        _trayIcon.Text = _isRecording ? "LocalVoice - ON (Listening)" : "LocalVoice - OFF (Ctrl+Shift+Space)";
+                    }
+                    AppSettingsService.Log("[App] Engine is READY.");
+                };
+
+                _transcriptionWindow.OnToggleListeningRequested += ToggleRecording;
                 _transcriptionWindow.OnDeviceSelected += (id) => _engine.SetDevice(id);
                 _transcriptionWindow.OnRefreshDevicesRequested += () => _engine.RequestDeviceList();
 
@@ -123,9 +142,10 @@ namespace LocalVoice.App
                 // 3. Setup System Tray with custom drawn microphone icon
                 SetupSystemTray();
 
-                // 4. Show the Transcription Window on startup
+                // 4. Show the Transcription Window on startup in Loading state
                 _transcriptionWindow.Show();
-                _transcriptionWindow.SetStatus(false);
+                _transcriptionWindow.SetLoadingState(true, "Loading AI Engine...");
+                _engine.RequestModelInfo();
 
                 // Apply saved terminal visibility setting (creates console on-demand if enabled)
                 bool showTerminal = AppSettingsService.GetTerminalSetting();
@@ -289,6 +309,13 @@ namespace LocalVoice.App
 
         private void ToggleRecording()
         {
+            if (!_isEngineReady)
+            {
+                AppSettingsService.Log("[App] Toggle ignored: AI Engine is still loading.");
+                try { System.Media.SystemSounds.Exclamation.Play(); } catch { }
+                return;
+            }
+
             if (_isRecording)
             {
                 StopRecording();
@@ -318,7 +345,12 @@ namespace LocalVoice.App
             if (_transcriptionWindow != null)
             {
                 _transcriptionWindow.Show();
-                _transcriptionWindow.SetStatus(true);
+                _transcriptionWindow.SetListeningState(true);
+            }
+
+            if (_trayIcon != null)
+            {
+                _trayIcon.Text = "LocalVoice - ON (Listening)";
             }
 
             _engine?.SendCommand("start");
@@ -331,7 +363,12 @@ namespace LocalVoice.App
 
             if (_transcriptionWindow != null)
             {
-                _transcriptionWindow.SetStatus(false);
+                _transcriptionWindow.SetListeningState(false);
+            }
+
+            if (_trayIcon != null)
+            {
+                _trayIcon.Text = "LocalVoice - OFF (Ctrl+Shift+Space)";
             }
 
             _engine?.SendCommand("stop");
