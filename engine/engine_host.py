@@ -218,11 +218,42 @@ class EngineHost:
                     self._emit("model_info", self._get_model_info_payload())
                     
                 elif action == "exit":
-                    self.is_running = False
-                    break
+                    self.cleanup_and_exit()
             except Exception as e:
                 print(f"[Command Error] {e}", file=sys.stderr)
 
+        # Stdin EOF reached (parent closed standard input)
+        self.cleanup_and_exit()
+
+    def cleanup_and_exit(self):
+        print("\n[Engine] Shutdown signal received. Offloading GPU model & terminating...", file=sys.stderr)
+        self.is_running = False
+        try:
+            self.audio_capture.stop()
+        except Exception:
+            pass
+        try:
+            import sounddevice as sd
+            sd._terminate()
+        except Exception:
+            pass
+        try:
+            if hasattr(self, 'transcriber') and hasattr(self.transcriber, 'model'):
+                del self.transcriber.model
+        except Exception:
+            pass
+        try:
+            import gc
+            gc.collect()
+        except Exception:
+            pass
+        print("[Engine] GPU memory offloaded successfully. Process terminating.", file=sys.stderr)
+        import os
+        os._exit(0)
+
 if __name__ == "__main__":
     host = EngineHost()
-    host.start()
+    try:
+        host.start()
+    finally:
+        host.cleanup_and_exit()

@@ -147,6 +147,13 @@ namespace LocalVoice.App
                 _transcriptionWindow.SetLoadingState(true, "Loading AI Engine...");
                 _engine.RequestModelInfo();
 
+                // Ensure Python AI engine is cleanly terminated and GPU freed on process exit
+                AppDomain.CurrentDomain.ProcessExit += (s, e) =>
+                {
+                    AppSettingsService.Log("[App] ProcessExit triggered. Ensuring engine cleanup.");
+                    _engine?.Dispose();
+                };
+
                 // Apply saved terminal visibility setting (creates console on-demand if enabled)
                 bool showTerminal = AppSettingsService.GetTerminalSetting();
                 AppSettingsService.ApplyConsoleState(showTerminal);
@@ -186,7 +193,12 @@ namespace LocalVoice.App
                 AppSettingsService.SetTerminalSetting(!cur);
             });
             menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("Exit", null, (s, e) => Shutdown());
+            menu.Items.Add("Exit", null, (s, e) =>
+            {
+                AppSettingsService.Log("[App] Exit requested from system tray.");
+                _engine?.Dispose();
+                Shutdown();
+            });
 
             _trayIcon.ContextMenuStrip = menu;
             _trayIcon.DoubleClick += (s, e) =>
