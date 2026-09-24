@@ -54,3 +54,21 @@ Communication between the WPF GUI and Python engine occurs via standard I/O (std
    - **Hotkey or text injection requests** &rarr; Directly modify files in `src/LocalVoice.App/Services/`.
    - **Speech recognition, VAD, or audio stream requests** &rarr; Directly modify files in `engine/`.
 3. **Preserve Documentation & Comments**: Always preserve existing comments and docstrings.
+
+---
+
+## 4. Multi-Agent Concurrency Protocol (`WORK_IN_PROGRESS.md`)
+
+When multiple AI models or agents (e.g. Gemini 3.8 and Claude Opus) work in parallel conversations, follow this strict synchronization protocol:
+
+1. **Check Locks First**:
+   - Before editing or writing code, read [`WORK_IN_PROGRESS.md`](WORK_IN_PROGRESS.md).
+   - Check if any files you plan to touch are listed under `Locked Files` by another agent.
+2. **Acquire Lock**:
+   - Before modifying a file, register your agent name (e.g. `Claude Opus` or `Gemini 3.8`), your task, and the target files in [`WORK_IN_PROGRESS.md`](WORK_IN_PROGRESS.md) with status `IN PROGRESS`.
+3. **Handle File Contention**:
+   - If a file you need is locked by another agent, **DO NOT modify it**.
+   - Check if there are other independent scripts or tasks you can work on while that file is busy. Complete those first.
+   - If all other independent updates are done and you still require the locked file, **stop and wait** (inform the user or check back later). Do NOT overwrite the other agent's work.
+4. **Release Lock Promptly**:
+   - Immediately after your file edits are complete and verified, update [`WORK_IN_PROGRESS.md`](WORK_IN_PROGRESS.md) to set your status back to `Available` and clear the locked files so other agents can proceed.
