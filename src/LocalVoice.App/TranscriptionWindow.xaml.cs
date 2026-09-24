@@ -14,25 +14,311 @@ using LocalVoice.App.Services;
 
 namespace LocalVoice.App
 {
+    public class WhisperModelOption : System.ComponentModel.INotifyPropertyChanged
+    {
+        private bool _isAvailable = true;
+        private string _displayName = "";
+        private string _resourceHint = "";
+        private string _tooltipText = "";
+
+        public string ModelKey { get; set; } = "";
+        public string BaseName { get; set; } = "";
+        public double RequiredVramGb { get; set; } = 0;
+        public double RequiredRamGb { get; set; } = 0;
+
+        public bool IsAvailable
+        {
+            get => _isAvailable;
+            set
+            {
+                if (_isAvailable != value)
+                {
+                    _isAvailable = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public string DisplayName
+        {
+            get => _displayName;
+            set
+            {
+                if (_displayName != value)
+                {
+                    _displayName = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public string ResourceHint
+        {
+            get => _resourceHint;
+            set
+            {
+                if (_resourceHint != value)
+                {
+                    _resourceHint = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public string TooltipText
+        {
+            get => _tooltipText;
+            set
+            {
+                if (_tooltipText != value)
+                {
+                    _tooltipText = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+        protected void OnPropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string? name = null)
+        {
+            PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(name));
+        }
+    }
+
     public partial class TranscriptionWindow : Window
     {
         public event Action? OnToggleListeningRequested;
         public event Action<int>? OnDeviceSelected;
+        public event Action<string>? OnModelSelected;
         public event Action? OnRefreshDevicesRequested;
 
         private static readonly BrushConverter _brushConverter = new();
         private static Brush HexBrush(string hex) => (Brush)_brushConverter.ConvertFromString(hex)!;
 
         private readonly ObservableCollection<AudioDeviceInfo> _deviceCollection = new();
+        private readonly ObservableCollection<WhisperModelOption> _modelOptions = new()
+        {
+            new WhisperModelOption 
+            { 
+                ModelKey = "auto", 
+                BaseName = "Auto (Recommended)", 
+                DisplayName = "Auto (Recommended)", 
+                RequiredVramGb = 0, 
+                RequiredRamGb = 0, 
+                ResourceHint = "Auto: Automatically picks balanced model for your hardware (~2 GB VRAM / RAM)",
+                TooltipText = "Auto: Automatically selects the best supported model for your hardware."
+            },
+            new WhisperModelOption 
+            { 
+                ModelKey = "tiny", 
+                BaseName = "Tiny (~1 GB RAM / VRAM)", 
+                DisplayName = "Tiny (~1 GB RAM / VRAM)", 
+                RequiredVramGb = 1.0, 
+                RequiredRamGb = 1.5, 
+                ResourceHint = "Tiny: Ultra-fast, lowest accuracy (~1 GB VRAM / RAM)",
+                TooltipText = "Tiny: Ultra-fast inference with minimal memory footprint (~1 GB VRAM / RAM)."
+            },
+            new WhisperModelOption 
+            { 
+                ModelKey = "base", 
+                BaseName = "Base (~1.5 GB RAM / VRAM)", 
+                DisplayName = "Base (~1.5 GB RAM / VRAM)", 
+                RequiredVramGb = 1.5, 
+                RequiredRamGb = 2.0, 
+                ResourceHint = "Base: Very fast, acceptable accuracy (~1.5 GB VRAM / RAM)",
+                TooltipText = "Base: Fast inference with good dictation accuracy (~1.5 GB VRAM / RAM)."
+            },
+            new WhisperModelOption 
+            { 
+                ModelKey = "small", 
+                BaseName = "Small (~2 GB RAM / VRAM)", 
+                DisplayName = "Small (~2 GB RAM / VRAM)", 
+                RequiredVramGb = 2.0, 
+                RequiredRamGb = 3.5, 
+                ResourceHint = "Small: Default balanced model for speed and accuracy (~2 GB VRAM / RAM)",
+                TooltipText = "Small: Optimal balance of speed and high accuracy (~2 GB VRAM / RAM)."
+            },
+            new WhisperModelOption 
+            { 
+                ModelKey = "medium", 
+                BaseName = "Medium (~5 GB RAM / VRAM)", 
+                DisplayName = "Medium (~5 GB RAM / VRAM)", 
+                RequiredVramGb = 5.0, 
+                RequiredRamGb = 6.0, 
+                ResourceHint = "Medium: High accuracy, heavier resource usage (~5 GB VRAM / RAM)",
+                TooltipText = "Medium: High accuracy model (~5 GB VRAM)."
+            },
+            new WhisperModelOption 
+            { 
+                ModelKey = "turbo", 
+                BaseName = "Turbo (~6 GB RAM / VRAM)", 
+                DisplayName = "Turbo (~6 GB RAM / VRAM)", 
+                RequiredVramGb = 6.0, 
+                RequiredRamGb = 8.0, 
+                ResourceHint = "Turbo: Large-v3-Turbo. High accuracy & optimized speed (~6 GB VRAM)",
+                TooltipText = "Turbo: Large-v3-Turbo with accelerated speed (~6 GB VRAM)."
+            },
+            new WhisperModelOption 
+            { 
+                ModelKey = "large-v3", 
+                BaseName = "Large v3 (~10 GB RAM / VRAM)", 
+                DisplayName = "Large v3 (~10 GB RAM / VRAM)", 
+                RequiredVramGb = 10.0, 
+                RequiredRamGb = 12.0, 
+                ResourceHint = "Large v3: Maximum accuracy, highest resource usage (~10 GB VRAM)",
+                TooltipText = "Large v3: Highest accuracy Whisper model (~10 GB VRAM)."
+            }
+        };
+
         private bool _isPopulating = false;
         private bool _isListening = false;
         private bool _isLoading = true;
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+        private class MEMORYSTATUSEX
+        {
+            public uint dwLength;
+            public uint dwMemoryLoad;
+            public ulong ullTotalPhys;
+            public ulong ullAvailPhys;
+            public ulong ullTotalPageFile;
+            public ulong ullAvailPageFile;
+            public ulong ullTotalVirtual;
+            public ulong ullAvailVirtual;
+            public ulong ullAvailExtendedVirtual;
+            public MEMORYSTATUSEX() { this.dwLength = (uint)Marshal.SizeOf(typeof(MEMORYSTATUSEX)); }
+        }
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GlobalMemoryStatusEx([In, Out] MEMORYSTATUSEX lpBuffer);
+
+        private static double DetectSystemRamGb()
+        {
+            try
+            {
+                var memStatus = new MEMORYSTATUSEX();
+                if (GlobalMemoryStatusEx(memStatus))
+                {
+                    return Math.Round(memStatus.ullTotalPhys / (1024.0 * 1024.0 * 1024.0), 1);
+                }
+            }
+            catch { }
+            return 8.0;
+        }
+
+        private static double DetectGpuVramGb()
+        {
+            try
+            {
+                var psi = new System.Diagnostics.ProcessStartInfo("nvidia-smi", "--query-gpu=memory.total --format=csv,noheader,nounits")
+                {
+                    RedirectStandardOutput = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                using var p = System.Diagnostics.Process.Start(psi);
+                if (p != null)
+                {
+                    string outStr = p.StandardOutput.ReadToEnd().Trim();
+                    if (p.WaitForExit(800))
+                    {
+                        var lines = outStr.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                        if (lines.Length > 0 && double.TryParse(lines[0].Trim(), out double mb))
+                        {
+                            return Math.Round(mb / 1024.0, 1);
+                        }
+                    }
+                }
+            }
+            catch { }
+            return 0.0;
+        }
+
+        private void DetectInitialHardware()
+        {
+            try
+            {
+                double vramGb = DetectGpuVramGb();
+                double ramGb = DetectSystemRamGb();
+                bool isGpu = vramGb > 0;
+                string hwName = isGpu ? "NVIDIA GPU" : "CPU";
+                UpdateModelAvailability(isGpu, vramGb, ramGb, hwName);
+            }
+            catch (Exception ex)
+            {
+                AppSettingsService.Log($"[UI] Initial hardware detection error: {ex.Message}");
+            }
+        }
+
+        public void UpdateModelAvailability(bool isGpu, double vramGb, double ramGb, string hwName = "")
+        {
+            Dispatcher.Invoke(() =>
+            {
+                string hwDesc = isGpu 
+                    ? (!string.IsNullOrWhiteSpace(hwName) ? $"{hwName} ({vramGb:F1} GB VRAM)" : $"{vramGb:F1} GB VRAM")
+                    : (!string.IsNullOrWhiteSpace(hwName) ? $"{hwName} ({ramGb:F1} GB RAM)" : $"{ramGb:F1} GB RAM");
+
+                foreach (var opt in _modelOptions)
+                {
+                    if (opt.ModelKey == "auto")
+                    {
+                        opt.IsAvailable = true;
+                        opt.DisplayName = opt.BaseName;
+                        opt.TooltipText = $"Auto: Selects optimal model for your device ({hwDesc})";
+                        continue;
+                    }
+
+                    if (isGpu && vramGb > 0)
+                    {
+                        bool fits = vramGb >= opt.RequiredVramGb;
+                        opt.IsAvailable = fits;
+                        if (fits)
+                        {
+                            opt.DisplayName = opt.BaseName;
+                            opt.TooltipText = $"{opt.BaseName}\nSupported on your GPU ({hwDesc})";
+                        }
+                        else
+                        {
+                            opt.DisplayName = opt.BaseName;
+                            opt.TooltipText = $"Unsupported on this device: Requires {opt.RequiredVramGb:F1} GB+ VRAM.\nYour GPU has {vramGb:F1} GB VRAM.";
+                        }
+                    }
+                    else
+                    {
+                        bool fits = ramGb >= opt.RequiredRamGb;
+                        opt.IsAvailable = fits;
+                        if (fits)
+                        {
+                            opt.DisplayName = opt.BaseName;
+                            opt.TooltipText = $"{opt.BaseName}\nSupported on your CPU ({hwDesc})";
+                        }
+                        else
+                        {
+                            opt.DisplayName = opt.BaseName;
+                            opt.TooltipText = $"Unsupported on this device: Requires {opt.RequiredRamGb:F1} GB+ RAM.\nYour system has {ramGb:F1} GB RAM.";
+                        }
+                    }
+                }
+
+                // If currently selected model is now unavailable, revert to 'auto'
+                if (ModelComboBox.SelectedItem is WhisperModelOption selected && !selected.IsAvailable)
+                {
+                    var fallback = _modelOptions.FirstOrDefault(m => m.IsAvailable) ?? _modelOptions[0];
+                    ModelComboBox.SelectedItem = fallback;
+                    AppSettingsService.SetWhisperModelSetting(fallback.ModelKey);
+                    AppSettingsService.Log($"[UI] Selected model '{selected.ModelKey}' is incompatible with detected hardware ({hwDesc}). Reverted to '{fallback.ModelKey}'.");
+                }
+            });
+        }
 
         public TranscriptionWindow()
         {
             InitializeComponent();
             MicComboBox.ItemsSource = _deviceCollection;
             MicComboBox.DropDownOpened += MicComboBox_DropDownOpened;
+            ModelComboBox.ItemsSource = _modelOptions;
+            DetectInitialHardware();
             SettingsPopup.Opened += SettingsPopup_Opened;
             this.PreviewMouseDown += TranscriptionWindow_PreviewMouseDown;
             this.Deactivated += (s, e) => SettingsPopup.IsOpen = false;
@@ -69,11 +355,22 @@ namespace LocalVoice.App
 
         private void TranscriptionWindow_Loaded(object sender, RoutedEventArgs e)
         {
-            // Initialize checkbox states from registry/settings
+            // Initialize checkbox states and model selection from registry/settings
             try
             {
                 ChkStartup.IsChecked = AppSettingsService.IsStartupEnabled();
                 ChkTerminal.IsChecked = AppSettingsService.GetTerminalSetting();
+
+                string savedModel = AppSettingsService.GetWhisperModelSetting();
+                var matching = _modelOptions.FirstOrDefault(m => m.ModelKey.Equals(savedModel, StringComparison.OrdinalIgnoreCase));
+                if (matching == null || !matching.IsAvailable)
+                {
+                    matching = _modelOptions.FirstOrDefault(m => m.IsAvailable) ?? _modelOptions[0];
+                    AppSettingsService.SetWhisperModelSetting(matching.ModelKey);
+                }
+
+                ModelComboBox.SelectedItem = matching;
+                ModelResourceHintText.Text = matching.ResourceHint;
             }
             catch { }
         }
@@ -95,22 +392,55 @@ namespace LocalVoice.App
         {
             if (SettingsPopup.IsOpen)
             {
-                // If clicking directly on BtnSettings or within its visual tree, let BtnSettings_Click handle the toggle
-                if (BtnSettings.IsMouseOver || (e.OriginalSource is DependencyObject dep && IsVisualDescendantOf(dep, BtnSettings)))
+                // 1. If clicking on or within the Settings toggle button, let BtnSettings_Click handle it
+                if (BtnSettings.IsMouseOver)
                     return;
 
-                // Click was inside TranscriptionWindow but not on the Settings button -> close the popup
+                System.Windows.Point ptBtn = e.GetPosition(BtnSettings);
+                if (ptBtn.X >= 0 && ptBtn.X <= BtnSettings.ActualWidth &&
+                    ptBtn.Y >= 0 && ptBtn.Y <= BtnSettings.ActualHeight)
+                    return;
+
+                // 2. If clicking inside the SettingsPopup panel, do not close!
+                if (SettingsPopup.Child is FrameworkElement popupContent)
+                {
+                    if (popupContent.IsMouseOver)
+                        return;
+
+                    System.Windows.Point ptPopup = e.GetPosition(popupContent);
+                    if (ptPopup.X >= 0 && ptPopup.X <= popupContent.ActualWidth &&
+                        ptPopup.Y >= 0 && ptPopup.Y <= popupContent.ActualHeight)
+                        return;
+
+                    // If a ComboBox dropdown inside the popup is currently open, keep open
+                    if (MicComboBox.IsDropDownOpen || ModelComboBox.IsDropDownOpen)
+                        return;
+
+                    if (e.OriginalSource is DependencyObject dep && IsDescendantOf(dep, popupContent))
+                        return;
+                }
+
+                // 3. Clicked anywhere else outside the popup and button -> close popup
                 SettingsPopup.IsOpen = false;
             }
         }
 
-        private static bool IsVisualDescendantOf(DependencyObject element, DependencyObject parent)
+        private static bool IsDescendantOf(DependencyObject element, DependencyObject parent)
         {
             DependencyObject? current = element;
             while (current != null)
             {
                 if (current == parent) return true;
-                current = VisualTreeHelper.GetParent(current);
+                DependencyObject? next = null;
+                if (current is Visual || current is System.Windows.Media.Media3D.Visual3D)
+                {
+                    try { next = VisualTreeHelper.GetParent(current); } catch { }
+                }
+                if (next == null)
+                {
+                    next = LogicalTreeHelper.GetParent(current);
+                }
+                current = next;
             }
             return false;
         }
@@ -150,6 +480,30 @@ namespace LocalVoice.App
             if (!IsLoaded) return;
             bool show = ChkTerminal.IsChecked == true;
             AppSettingsService.SetTerminalSetting(show);
+        }
+
+        private void ModelComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (ModelComboBox.SelectedItem is WhisperModelOption option)
+            {
+                if (!option.IsAvailable)
+                {
+                    var fallback = _modelOptions.FirstOrDefault(m => m.IsAvailable) ?? _modelOptions[0];
+                    ModelComboBox.SelectedItem = fallback;
+                    return;
+                }
+
+                ModelResourceHintText.Text = option.ResourceHint;
+                if (!IsLoaded) return;
+
+                string currentSaved = AppSettingsService.GetWhisperModelSetting();
+                if (!string.Equals(currentSaved, option.ModelKey, StringComparison.OrdinalIgnoreCase))
+                {
+                    AppSettingsService.SetWhisperModelSetting(option.ModelKey);
+                    AppSettingsService.Log($"[UI] User switched Whisper model to: {option.ModelKey}");
+                    OnModelSelected?.Invoke(option.ModelKey);
+                }
+            }
         }
 
         public void PopulateDevices(List<AudioDeviceInfo> devices, int selectedId)

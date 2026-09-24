@@ -182,6 +182,7 @@ namespace LocalVoice.App.Services
         public event Action? OnVadEnd;
         public event Action<List<AudioDeviceInfo>, int>? OnDeviceListReceived;
         public event Action<string, string>? OnModelInfoReceived;
+        public event Action<bool, double, double, string>? OnHardwareInfoReceived;
         public event Action? OnEngineReady;
         public event Action<string>? OnEngineLoading;
 
@@ -221,7 +222,8 @@ namespace LocalVoice.App.Services
             if (string.IsNullOrEmpty(pythonPath)) pythonPath = "python.exe";
             if (string.IsNullOrEmpty(enginePath)) enginePath = "engine_host.py";
 
-            AppSettingsService.Log($"[IPC] Launching Engine: {pythonPath}");
+            string savedModel = AppSettingsService.GetWhisperModelSetting();
+            AppSettingsService.Log($"[IPC] Launching Engine: {pythonPath} (Model: {savedModel})");
             AppSettingsService.Log($"[IPC] Script Path: {enginePath}");
 
             _process = new Process
@@ -229,7 +231,7 @@ namespace LocalVoice.App.Services
                 StartInfo = new ProcessStartInfo
                 {
                     FileName = pythonPath,
-                    Arguments = $"\"{enginePath}\"",
+                    Arguments = $"\"{enginePath}\" --model \"{savedModel}\"",
                     WorkingDirectory = Path.GetDirectoryName(enginePath) ?? baseDir,
                     UseShellExecute = false,
                     RedirectStandardInput = true,
@@ -313,6 +315,11 @@ namespace LocalVoice.App.Services
 
                         string model = "small";
                         string hardwareLabel = "GPU: RTX 3050 (CUDA FP16)";
+                        bool isGpu = false;
+                        double vramGb = 0;
+                        double ramGb = 0;
+                        string hardwareName = "";
+
                         if (doc.RootElement.TryGetProperty("model", out var mElem))
                         {
                             model = mElem.GetString() ?? "small";
@@ -325,8 +332,26 @@ namespace LocalVoice.App.Services
                         {
                             hardwareLabel = lElem.GetString() ?? "GPU: RTX 3050 (CUDA FP16)";
                         }
-                        AppSettingsService.Log($"[Engine] Model & Hardware info received: Model={model}, Hardware={hardwareLabel}");
+                        if (doc.RootElement.TryGetProperty("is_gpu", out var gElem))
+                        {
+                            isGpu = gElem.GetBoolean();
+                        }
+                        if (doc.RootElement.TryGetProperty("vram_gb", out var vElem))
+                        {
+                            vramGb = vElem.GetDouble();
+                        }
+                        if (doc.RootElement.TryGetProperty("ram_gb", out var rElem))
+                        {
+                            ramGb = rElem.GetDouble();
+                        }
+                        if (doc.RootElement.TryGetProperty("hardware_name", out var hnElem))
+                        {
+                            hardwareName = hnElem.GetString() ?? "";
+                        }
+
+                        AppSettingsService.Log($"[Engine] Model & Hardware info received: Model={model}, Hardware={hardwareLabel}, isGpu={isGpu}, VRAM={vramGb}GB, RAM={ramGb}GB");
                         OnModelInfoReceived?.Invoke(model, hardwareLabel);
+                        OnHardwareInfoReceived?.Invoke(isGpu, vramGb, ramGb, hardwareName);
                     }
                 }
             }
@@ -339,6 +364,11 @@ namespace LocalVoice.App.Services
         public void SetDevice(int deviceId)
         {
             SendCommandWithPayload("set_device", new { device_id = deviceId });
+        }
+
+        public void SetModel(string model)
+        {
+            SendCommandWithPayload("set_model", new { model = model });
         }
 
         public void RequestDeviceList()

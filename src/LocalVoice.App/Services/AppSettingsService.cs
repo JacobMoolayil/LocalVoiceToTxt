@@ -109,6 +109,33 @@ namespace LocalVoice.App.Services
             ApplyConsoleState(show);
         }
 
+        public static string GetWhisperModelSetting()
+        {
+            try
+            {
+                using var key = Registry.CurrentUser.OpenSubKey(APP_KEY, false);
+                if (key != null)
+                {
+                    var val = key.GetValue("WhisperModel");
+                    if (val is string strVal && !string.IsNullOrWhiteSpace(strVal))
+                        return strVal;
+                }
+            }
+            catch { }
+            return "auto"; // Default: auto
+        }
+
+        public static void SetWhisperModelSetting(string model)
+        {
+            try
+            {
+                using var key = Registry.CurrentUser.CreateSubKey(APP_KEY);
+                key?.SetValue("WhisperModel", model, RegistryValueKind.String);
+                Log($"[Settings] Whisper model setting saved: {model}");
+            }
+            catch { }
+        }
+
         public static void ApplyConsoleState(bool show)
         {
             IntPtr hWnd = GetConsoleWindow();

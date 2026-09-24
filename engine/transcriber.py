@@ -49,23 +49,30 @@ VOCABULARY_MAP = [
 class Transcriber:
     def __init__(self, config: AppConfig):
         self.config = config
-        self.model_name = config.model_size
+        self.vram_gb = self._detect_gpu_memory_gb()
+        self.ram_gb = self._detect_system_ram_gb()
+        self.is_gpu = False
+        self._load_model(config.model_size)
+
+    def _load_model(self, model_size: str):
+        self.model_name = model_size
         try:
-            print(f"Loading Whisper model '{config.model_size}' on {config.device} ({config.compute_type})...", file=sys.stderr)
+            print(f"Loading Whisper model '{model_size}' on {self.config.device} ({self.config.compute_type})...", file=sys.stderr)
             self.model = WhisperModel(
-                config.model_size,
-                device=config.device,
-                compute_type=config.compute_type,
+                model_size,
+                device=self.config.device,
+                compute_type=self.config.compute_type,
                 local_files_only=False
             )
             print("Whisper model loaded on GPU (CUDA FP16).", file=sys.stderr)
-            self.actual_device = config.device
-            self.actual_compute_type = config.compute_type
+            self.actual_device = self.config.device
+            self.actual_compute_type = self.config.compute_type
             self.hardware_name = self._detect_gpu_name()
+            self.is_gpu = (self.actual_device == "cuda")
         except Exception as e:
             print(f"[Warning] GPU acceleration unavailable ({e}). Falling back to CPU mode (int8)...", file=sys.stderr)
             self.model = WhisperModel(
-                config.model_size,
+                model_size,
                 device="cpu",
                 compute_type="int8",
                 local_files_only=False
@@ -74,6 +81,18 @@ class Transcriber:
             self.actual_device = "cpu"
             self.actual_compute_type = "int8"
             self.hardware_name = self._detect_cpu_name()
+            self.is_gpu = False
+
+    def reload_model(self, new_model_size: str):
+        """Unloads current model from memory and loads the specified model."""
+        if hasattr(self, 'model'):
+            try:
+                del self.model
+            except Exception:
+                pass
+            import gc
+            gc.collect()
+        self._load_model(new_model_size)
 
     def _detect_gpu_name(self) -> str:
         try:
@@ -88,6 +107,45 @@ class Transcriber:
         except Exception:
             pass
         return "RTX 3050"
+
+    def _detect_gpu_memory_gb(self) -> float:
+        try:
+            import subprocess
+            out = subprocess.check_output(
+                ['nvidia-smi', '--query-gpu=memory.total', '--format=csv,noheader,nounits'],
+                text=True, stderr=subprocess.DEVNULL
+            ).strip()
+            if out:
+                lines = [line.strip() for line in out.splitlines() if line.strip()]
+                if lines:
+                    mb = float(lines[0])
+                    return round(mb / 1024.0, 1)
+        except Exception:
+            pass
+        return 0.0
+
+    def _detect_system_ram_gb(self) -> float:
+        try:
+            import ctypes
+            class MEMORYSTATUSEX(ctypes.Structure):
+                _fields_ = [
+                    ('dwLength', ctypes.c_ulong),
+                    ('dwMemoryLoad', ctypes.c_ulong),
+                    ('ullTotalPhys', ctypes.c_ulonglong),
+                    ('ullAvailPhys', ctypes.c_ulonglong),
+                    ('ullTotalPageFile', ctypes.c_ulonglong),
+                    ('ullAvailPageFile', ctypes.c_ulonglong),
+                    ('ullTotalVirtual', ctypes.c_ulonglong),
+                    ('ullAvailVirtual', ctypes.c_ulonglong),
+                    ('ullAvailExtendedVirtual', ctypes.c_ulonglong)
+                ]
+            stat = MEMORYSTATUSEX()
+            stat.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat)):
+                return round(stat.ullTotalPhys / (1024.0 ** 3), 1)
+        except Exception:
+            pass
+        return 8.0
 
     def _detect_cpu_name(self) -> str:
         try:

@@ -19,20 +19,22 @@ Communication between the WPF GUI and Python engine occurs via standard I/O (std
 ### A. Frontend GUI & Services (`src/LocalVoice.App/`)
 * **Window Layout, Positioning & Visuals**:
   - [`TranscriptionWindow.xaml`](src/LocalVoice.App/TranscriptionWindow.xaml) & [`TranscriptionWindow.xaml.cs`](src/LocalVoice.App/TranscriptionWindow.xaml.cs)
-  - Controls window coordinates (Top, Left, Screen alignment), drag-to-move, always-on-top overlay, theme, and UI controls (mic selector, copy, clear, terminal toggle).
+  - Controls window coordinates (Top, Left, Screen alignment), drag-to-move, always-on-top overlay, theme, and UI controls (mic device label, copy, clear, settings flyout).
+  - **Settings Flyout Architecture**: Uses `SettingsPopup` (`StaysOpen="True"`) with window-level dismiss (`PreviewMouseDown` on the window and `Deactivated`). **Do NOT set `StaysOpen="False"`** on this popup, as WPF's global mouse-capture will intercept outside clicks, creating race conditions with the toggle button.
+  - Inside Settings Flyout: Microphone selector, Whisper AI Model dropdown with dynamic hardware capability detection (greys out / disables models that exceed available GPU VRAM or CPU RAM, displaying an 'UNSUPPORTED' badge and detailed requirement tooltips), Start with Windows, and Show Terminal.
 * **Application Lifecycle & Tray**:
   - [`App.xaml`](src/LocalVoice.App/App.xaml) & [`App.xaml.cs`](src/LocalVoice.App/App.xaml.cs)
-  - Single-instance mutex, system tray icon, startup, shutdown cleanup.
+  - Single-instance mutex, system tray icon, startup, model selection wiring, hardware detection event routing, shutdown cleanup.
 * **Services (`src/LocalVoice.App/Services/`)**:
-  - `AppSettingsService.cs`: Persists and loads user preferences (selected mic, hotkey, startup).
+  - `AppSettingsService.cs`: Persists and loads user preferences in the Windows Registry (`Software\LocalVoice`): selected mic, `WhisperModel`, startup, and `ShowTerminal`.
   - `AudioDeviceWatcher.cs`: Detects when Windows audio input devices change.
-  - `EngineProcessService.cs`: Spawns, monitors, and communicates with the Python engine.
+  - `EngineProcessService.cs`: Spawns, monitors, and communicates with the Python engine. Passes `--model` argument on launch, parses hardware detection payloads (`is_gpu`, `vram_gb`, `ram_gb`), and sends `set_model` IPC commands for live switching.
   - `GlobalHotkeyService.cs`: Registers and intercepts system-wide hotkeys (default: `Ctrl + Shift + Space`).
   - `TextInjectionService.cs`: Safely injects text into whatever application currently has focus without stealing focus.
 
 ### B. Python Speech & Audio Engine (`engine/`)
-* [`engine_host.py`](engine/engine_host.py): Main entry point for the Python engine. Coordinates audio recording, VAD processing, and Whisper transcription, and emits JSON/events to stdout for the C# frontend.
-* [`transcriber.py`](engine/transcriber.py): Manages `faster-whisper` model loading, GPU CUDA / CPU fallback, spoken punctuation replacement, and transcript generation.
+* [`engine_host.py`](engine/engine_host.py): Main entry point for the Python engine. Coordinates audio recording, VAD processing, and Whisper transcription. Accepts `--model` CLI argument, handles dynamic model switching (`set_model` command over stdin), guards against reloading models that exceed hardware memory to prevent CUDA OOM, and emits JSON/events (`ready`, `model_info` with `is_gpu`, `vram_gb`, `ram_gb`) to stdout for the C# frontend. Resolves `"auto"` to `"small"`.
+* [`transcriber.py`](engine/transcriber.py): Manages `faster-whisper` model loading with GPU CUDA FP16 and CPU INT8 fallback, dynamic model hot-reloading (`reload_model`), hardware memory detection (`_detect_gpu_memory_gb` via `nvidia-smi` and `_detect_system_ram_gb` via `GlobalMemoryStatusEx`), spoken punctuation replacement, and transcript generation.
 * [`audio_capture.py`](engine/audio_capture.py): Captures microphone audio stream via `sounddevice`.
 * [`vad_chunker.py`](engine/vad_chunker.py): Silero VAD v5 ONNX voice activity detection and chunking.
 * [`config.py`](engine/config.py): Audio parameters (16kHz, mono), model settings, and thresholds.
@@ -54,6 +56,11 @@ Communication between the WPF GUI and Python engine occurs via standard I/O (std
    - **Hotkey or text injection requests** &rarr; Directly modify files in `src/LocalVoice.App/Services/`.
    - **Speech recognition, VAD, or audio stream requests** &rarr; Directly modify files in `engine/`.
 3. **Preserve Documentation & Comments**: Always preserve existing comments and docstrings.
+4. **Always Auto-Update `AGENTS.md`**:
+   - Whenever you implement a new feature, modify GUI controls or windows, alter IPC message contracts or events, add/remove services, or change backend engine behavior, you **MUST automatically update `AGENTS.md`** to keep the architecture overview, Fast File Map, and component descriptions accurate and synchronized.
+   - Do NOT wait for the user to ask for documentation updates—proactively maintain this file as the authoritative single source of truth across all AI pair-programming sessions.
+5. **Git Commit Permission**:
+   - Never run `git commit` unless explicitly requested by the user.
 
 ---
 

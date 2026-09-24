@@ -8,7 +8,7 @@ if (-not $Version) {
     if ($env:GITHUB_REF_NAME -and $env:GITHUB_REF_NAME -ne "master") {
         $Version = $env:GITHUB_REF_NAME
     } else {
-        $Version = "v1.2.0"
+        $Version = "v1.3.0"
     }
 }
 

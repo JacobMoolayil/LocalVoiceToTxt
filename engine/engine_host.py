@@ -10,14 +10,44 @@ from audio_capture import AudioCapture, get_audio_devices
 from vad_chunker import SileroVAD
 from transcriber import Transcriber
 
+MODEL_VRAM_REQUIREMENTS = {
+    "tiny": 1.0,
+    "base": 1.5,
+    "small": 2.0,
+    "medium": 5.0,
+    "turbo": 6.0,
+    "large-v3": 10.0,
+    "large": 10.0,
+}
+
+MODEL_RAM_REQUIREMENTS = {
+    "tiny": 1.5,
+    "base": 2.0,
+    "small": 3.5,
+    "medium": 6.0,
+    "turbo": 8.0,
+    "large-v3": 12.0,
+    "large": 12.0,
+}
+
+def resolve_model_size(model_name: str) -> str:
+    """Resolves 'auto' to a balanced default model ('small') or normalizes the model name."""
+    if not model_name or model_name.strip().lower() == "auto":
+        return "small"
+    return model_name.strip().lower()
+
 class EngineHost:
-    def __init__(self):
+    def __init__(self, requested_model: str = "auto"):
+        self.requested_model = requested_model
+        resolved_model = resolve_model_size(requested_model)
+        
         self._emit("loading", {"message": "Initializing audio capture and VAD..."})
         self.config = AppConfig()
+        self.config.model_size = resolved_model
         self.audio_capture = AudioCapture(self.config.sample_rate, self.config.chunk_size)
         
         self.vad = SileroVAD(self.config.vad_threshold, self.config.sample_rate)
-        self._emit("loading", {"message": "Loading Whisper AI model..."})
+        self._emit("loading", {"message": f"Loading Whisper AI model '{resolved_model}'..."})
         self.transcriber = Transcriber(self.config)
         
         self.is_running = True
@@ -112,6 +142,9 @@ class EngineHost:
         actual_dev = getattr(self.transcriber, "actual_device", self.config.device)
         actual_comp = getattr(self.transcriber, "actual_compute_type", self.config.compute_type)
         hw_name = getattr(self.transcriber, "hardware_name", "RTX 3050")
+        is_gpu = getattr(self.transcriber, "is_gpu", actual_dev == "cuda")
+        vram_gb = getattr(self.transcriber, "vram_gb", 0.0)
+        ram_gb = getattr(self.transcriber, "ram_gb", 8.0)
         comp_str = "FP16" if "16" in actual_comp else actual_comp.upper()
         if actual_dev == "cuda":
             hw_label = f"GPU: {hw_name} (CUDA {comp_str})"
@@ -119,13 +152,18 @@ class EngineHost:
             hw_label = f"CPU ({comp_str})" if hw_name == "CPU" else f"CPU: {hw_name} ({comp_str})"
 
         model_name = getattr(self.transcriber, "model_name", self.config.model_size)
+        requested_model = getattr(self, "requested_model", "auto")
         return {
             "model": model_name,
+            "requested_model": requested_model,
             "device": actual_dev,
             "compute_type": actual_comp,
             "hardware_name": hw_name,
             "hardware_label": hw_label,
-            "label": f"{model_name} | {hw_label}"
+            "label": f"{model_name} | {hw_label}",
+            "is_gpu": is_gpu,
+            "vram_gb": vram_gb,
+            "ram_gb": ram_gb
         }
 
     def start(self):
@@ -214,6 +252,47 @@ class EngineHost:
                     self.audio_capture.set_device(dev_id)
                     self._emit("device_changed", {"device_id": dev_id})
 
+                elif action == "set_model":
+                    req_model = cmd.get("model", "auto")
+                    resolved = resolve_model_size(req_model)
+                    self.requested_model = req_model
+                    print(f"\n[Engine] Received command to switch Whisper model to '{req_model}' (resolved: {resolved})", file=sys.stderr)
+
+                    # Hardware suitability check
+                    is_gpu = getattr(self.transcriber, "is_gpu", self.transcriber.actual_device == "cuda")
+                    vram_gb = getattr(self.transcriber, "vram_gb", 0.0)
+                    ram_gb = getattr(self.transcriber, "ram_gb", 8.0)
+                    min_vram = MODEL_VRAM_REQUIREMENTS.get(resolved, 0.0)
+                    min_ram = MODEL_RAM_REQUIREMENTS.get(resolved, 0.0)
+
+                    if is_gpu and vram_gb > 0 and min_vram > vram_gb:
+                        print(f"[Engine Warning] Model '{resolved}' requires ~{min_vram} GB VRAM, but device has {vram_gb} GB VRAM. Rejecting model switch to prevent crash.", file=sys.stderr)
+                        info = self._get_model_info_payload()
+                        self._emit("model_info", info)
+                        continue
+
+                    if not is_gpu and min_ram > ram_gb:
+                        print(f"[Engine Warning] Model '{resolved}' requires ~{min_ram} GB RAM, but system has {ram_gb} GB RAM. Rejecting model switch to prevent freeze.", file=sys.stderr)
+                        info = self._get_model_info_payload()
+                        self._emit("model_info", info)
+                        continue
+
+                    self._emit("loading", {"message": f"Switching to Whisper model '{resolved}'..."})
+                    try:
+                        if self.audio_capture._is_recording:
+                            self.audio_capture.stop()
+                            self._emit("status", {"recording": False})
+
+                        self.transcriber.reload_model(resolved)
+                        info = self._get_model_info_payload()
+                        self._emit("model_info", info)
+                        self._emit("ready", info)
+                        print(f"[Engine] Whisper model successfully switched to: {resolved} ({info['hardware_label']})", file=sys.stderr)
+                    except Exception as ex:
+                        print(f"[Engine Error] Failed to switch Whisper model: {ex}", file=sys.stderr)
+                        traceback.print_exc(file=sys.stderr)
+                        self._emit("ready", self._get_model_info_payload())
+
                 elif action == "get_model_info":
                     self._emit("model_info", self._get_model_info_payload())
                     
@@ -252,7 +331,12 @@ class EngineHost:
         os._exit(0)
 
 if __name__ == "__main__":
-    host = EngineHost()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model", type=str, default="auto", help="Whisper model size")
+    args, _ = parser.parse_known_args()
+
+    host = EngineHost(requested_model=args.model)
     try:
         host.start()
     finally:

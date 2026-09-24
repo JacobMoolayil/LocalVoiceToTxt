@@ -103,6 +103,7 @@ namespace LocalVoice.App
                 _engine.OnVadEnd += () => _transcriptionWindow?.SetSpeechDetected(false);
                 _engine.OnDeviceListReceived += (devs, selId) => _transcriptionWindow.PopulateDevices(devs, selId);
                 _engine.OnModelInfoReceived += (model, label) => _transcriptionWindow?.SetModelInfo(model, label);
+                _engine.OnHardwareInfoReceived += (isGpu, vramGb, ramGb, hwName) => _transcriptionWindow?.UpdateModelAvailability(isGpu, vramGb, ramGb, hwName);
 
                 _engine.OnEngineLoading += (msg) =>
                 {
@@ -123,6 +124,7 @@ namespace LocalVoice.App
 
                 _transcriptionWindow.OnToggleListeningRequested += ToggleRecording;
                 _transcriptionWindow.OnDeviceSelected += (id) => _engine.SetDevice(id);
+                _transcriptionWindow.OnModelSelected += (model) => _engine.SetModel(model);
                 _transcriptionWindow.OnRefreshDevicesRequested += () => _engine.RequestDeviceList();
 
                 // Wire up audio device watcher (CoreAudio endpoint & default device changes)
