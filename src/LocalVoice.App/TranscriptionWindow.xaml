@@ -177,7 +177,7 @@
 
             <!-- Settings Flyout Popup -->
             <Popup x:Name="SettingsPopup" Placement="Top" PlacementTarget="{Binding ElementName=BtnSettings}"
-                   StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
+                   StaysOpen="True" AllowsTransparency="True" PopupAnimation="Fade">
                 <Border Background="#1E1E1E" CornerRadius="8" BorderBrush="#3F3F46" BorderThickness="1.5" Padding="14" Margin="8">
                     <Border.Effect>
                         <DropShadowEffect Color="#000000" BlurRadius="15" Opacity="0.5" ShadowDepth="3"/>

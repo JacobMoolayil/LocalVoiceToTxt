@@ -27,7 +27,6 @@ namespace LocalVoice.App
         private bool _isPopulating = false;
         private bool _isListening = false;
         private bool _isLoading = true;
-        private DateTime _settingsPopupLastClosed = DateTime.MinValue;
 
         public TranscriptionWindow()
         {
@@ -35,7 +34,8 @@ namespace LocalVoice.App
             MicComboBox.ItemsSource = _deviceCollection;
             MicComboBox.DropDownOpened += MicComboBox_DropDownOpened;
             SettingsPopup.Opened += SettingsPopup_Opened;
-            SettingsPopup.Closed += (s, e) => _settingsPopupLastClosed = DateTime.Now;
+            this.PreviewMouseDown += TranscriptionWindow_PreviewMouseDown;
+            this.Deactivated += (s, e) => SettingsPopup.IsOpen = false;
             this.MouseLeftButtonDown += (s, e) => { this.DragMove(); };
             this.Loaded += TranscriptionWindow_Loaded;
             this.IsVisibleChanged += TranscriptionWindow_IsVisibleChanged;
@@ -91,20 +91,34 @@ namespace LocalVoice.App
             OnRefreshDevicesRequested?.Invoke();
         }
 
-        private void BtnSettings_Click(object sender, RoutedEventArgs e)
+        private void TranscriptionWindow_PreviewMouseDown(object sender, MouseButtonEventArgs e)
         {
-            // If the popup is currently open, close it and exit
             if (SettingsPopup.IsOpen)
             {
+                // If clicking directly on BtnSettings or within its visual tree, let BtnSettings_Click handle the toggle
+                if (BtnSettings.IsMouseOver || (e.OriginalSource is DependencyObject dep && IsVisualDescendantOf(dep, BtnSettings)))
+                    return;
+
+                // Click was inside TranscriptionWindow but not on the Settings button -> close the popup
                 SettingsPopup.IsOpen = false;
-                return;
             }
+        }
 
-            // Prevent immediately reopening if the popup was just closed by clicking this button or elsewhere
-            if ((DateTime.Now - _settingsPopupLastClosed).TotalMilliseconds < 300)
-                return;
+        private static bool IsVisualDescendantOf(DependencyObject element, DependencyObject parent)
+        {
+            DependencyObject? current = element;
+            while (current != null)
+            {
+                if (current == parent) return true;
+                current = VisualTreeHelper.GetParent(current);
+            }
+            return false;
+        }
 
-            SettingsPopup.IsOpen = true;
+        private void BtnSettings_Click(object sender, RoutedEventArgs e)
+        {
+            // Clean, deterministic toggle
+            SettingsPopup.IsOpen = !SettingsPopup.IsOpen;
         }
 
         private void SettingsPopup_Opened(object? sender, EventArgs e)
